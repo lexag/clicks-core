@@ -7,13 +7,14 @@ use crate::audio::source::SourceConfig;
 use common::{
     command::ControlCommand,
     cue::Cue,
+    network::StatusMessageKind,
     status::{AudioSourceStatus, ProcessStatus},
 };
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
     ports: Vec<Port<AudioOut>>,
-    tx: Sender<ProcessStatus>,
+    tx: Sender<StatusMessageKind>,
     rx: Receiver<ControlCommand>,
     status: ProcessStatus,
 }
@@ -23,7 +24,7 @@ impl AudioProcessor {
         sources: Vec<SourceConfig>,
         ports: Vec<Port<AudioOut>>,
         rx: Receiver<ControlCommand>,
-        tx: Sender<ProcessStatus>,
+        tx: Sender<StatusMessageKind>,
     ) -> AudioProcessor {
         AudioProcessor {
             sources,
@@ -107,7 +108,9 @@ impl ProcessHandler for AudioProcessor {
             }
         }
 
-        let _ = self.tx.try_send(self.status.clone());
+        let _ = self
+            .tx
+            .try_send(StatusMessageKind::ProcessStatus(Some(self.status.clone())));
 
         //println!("{:?}", process_status);
         return Control::Continue;

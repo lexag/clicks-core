@@ -2,6 +2,7 @@ use crate::audio::{
     config::AudioConfig, notification::JACKNotificationHandler, processor::AudioProcessor,
     source::SourceConfig,
 };
+use common::network::StatusMessageKind;
 use crossbeam_channel::{Receiver, Sender};
 use jack::{AsyncClient, AudioOut, Client, ClientOptions, Error, PortFlags};
 
@@ -18,7 +19,7 @@ impl AudioHandler {
         config: AudioConfig,
         sources: Vec<SourceConfig>,
         rx: Receiver<ControlCommand>,
-        tx: Sender<ProcessStatus>,
+        tx: Sender<StatusMessageKind>,
     ) -> AudioHandler {
         let client_res = Client::new(
             &config.client_name.to_string(),
