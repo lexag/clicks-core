@@ -1,8 +1,9 @@
-use std::net::UdpSocket;
+use std::net::{Ipv4Addr, UdpSocket};
 
+use chrono::{DateTime, Utc};
 use common::{
     command::ControlCommand,
-    network::{ControlMessageKind, StatusMessageKind, SubscriberInfo},
+    network::{ControlMessageKind, NetworkStatus, StatusMessageKind, SubscriberInfo},
 };
 use crossbeam_channel::Sender;
 
@@ -30,7 +31,12 @@ impl NetworkHandler {
     pub fn tick(&mut self) {
         let mut buf = [0; 1024];
         match self.socket.recv_from(&mut buf) {
-            Ok((amt, _src)) => {
+            Ok((amt, src)) => {
+                for subscriber in &mut self.subscribers {
+                    if subscriber.streq(src.to_string()) {
+                        subscriber.last_contact = Utc::now().to_rfc3339();
+                    }
+                }
                 let msg: ControlMessageKind =
                     match serde_json::from_str(std::str::from_utf8(&buf[..amt]).unwrap()) {
                         Ok(msg) => msg,
@@ -42,12 +48,38 @@ impl NetworkHandler {
                         }
                     };
                 match msg {
+                    ControlMessageKind::Ping => {}
                     ControlMessageKind::ControlCommand(cmd) => {
                         let _ = self.cmd_tx.send(cmd);
                     }
                     ControlMessageKind::SubscribeRequest(info) => {
-                        println!("New subscriber: {info:?}");
-                        self.subscribers.push(info);
+                        let mut recognized_subscriber = false;
+                        for subscriber in &mut self.subscribers {
+                            if subscriber.address == info.address && subscriber.port == info.port {
+                                subscriber.message_kinds = info.message_kinds.clone();
+                                recognized_subscriber = true;
+                            }
+                        }
+                        if !recognized_subscriber {
+                            println!("New subscriber: {info:?}");
+                            self.subscribers.push(info);
+                        }
+                        let _ = self.cmd_tx.send(ControlCommand::NotifySubscribers);
+                        self.send_to_all(StatusMessageKind::NetworkStatus(Some(NetworkStatus {
+                            subscribers: self.subscribers.clone(),
+                        })));
+                    }
+                    ControlMessageKind::UnsubscribeRequest(info) => {
+                        self.subscribers = self
+                            .subscribers
+                            .clone()
+                            .into_iter()
+                            .filter(|sub| !(sub.address == info.address && sub.port == info.port))
+                            .collect();
+                        let _ = self.cmd_tx.send(ControlCommand::NotifySubscribers);
+                        self.send_to_all(StatusMessageKind::NetworkStatus(Some(NetworkStatus {
+                            subscribers: self.subscribers.clone(),
+                        })));
                     }
                     _ => {}
                 }
@@ -56,14 +88,34 @@ impl NetworkHandler {
         };
     }
 
-    pub fn send_to_all(&self, msg: StatusMessageKind) {
+    pub fn send_to_all(&mut self, msg: StatusMessageKind) {
+        self.subscribers = self
+            .subscribers
+            .clone()
+            .into_iter()
+            .filter(|sub| {
+                Utc::now()
+                    .signed_duration_since(DateTime::parse_from_rfc3339(&sub.last_contact).unwrap())
+                    .num_minutes()
+                    < 15
+            })
+            .collect();
+
         for subscriber in &self.subscribers {
             for msg_kind in &subscriber.message_kinds {
                 if std::mem::discriminant(&msg) == std::mem::discriminant(msg_kind) {
-                    let _ = self.socket.send_to(
+                    //println!("{}", serde_json::to_string(&msg).unwrap());
+                    match self.socket.send_to(
                         serde_json::to_string(&msg).unwrap().as_bytes(),
                         format!("{}:{}", subscriber.address, subscriber.port),
-                    );
+                    ) {
+                        Ok(amt) => {
+                            //println!("{}", amt);
+                        }
+                        Err(err) => {
+                            println!("{}", err);
+                        }
+                    }
                 }
             }
         }
