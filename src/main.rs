@@ -3,13 +3,11 @@ mod metronome;
 mod network;
 mod timecode;
 
-use std::net::UdpSocket;
 
 use common::{
     self,
     command::ControlCommand,
-    network::{ControlMessageKind, StatusMessageKind, SubscriberInfo},
-    status::ProcessStatus,
+    network::StatusMessageKind,
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};

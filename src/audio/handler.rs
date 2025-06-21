@@ -7,7 +7,6 @@ use crossbeam_channel::{Receiver, Sender};
 use jack::{AsyncClient, AudioOut, Client, ClientOptions, Error, PortFlags};
 
 use common::command::ControlCommand;
-use common::status::ProcessStatus;
 
 pub struct AudioHandler {
     pub client: AsyncClient<JACKNotificationHandler, AudioProcessor>,

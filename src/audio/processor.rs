@@ -1,14 +1,12 @@
 use crossbeam_channel::{Receiver, Sender};
 use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope};
-use serde::Serialize;
 
 use crate::audio::source::SourceConfig;
 
 use common::{
     command::ControlCommand,
-    cue::Cue,
     network::StatusMessageKind,
-    status::{AudioSourceStatus, CombinedStatus, ProcessStatus},
+    status::{AudioSourceStatus, CombinedStatus},
 };
 
 pub struct AudioProcessor {
