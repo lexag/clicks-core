@@ -3,12 +3,7 @@ mod metronome;
 mod network;
 mod timecode;
 
-
-use common::{
-    self,
-    command::ControlCommand,
-    network::StatusMessageKind,
-};
+use common::{self, command::ControlCommand, network::StatusMessageKind};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use metronome::Metronome;
@@ -53,7 +48,13 @@ fn main() {
         nh.tick();
         match status_rx.try_recv() {
             Ok(msg) => {
-                nh.send_to_all(msg);
+                nh.send_to_all(msg.clone());
+                match msg {
+                    StatusMessageKind::Shutdown => {
+                        break;
+                    }
+                    _ => {}
+                }
             }
 
             // If channel is empty, continue with process

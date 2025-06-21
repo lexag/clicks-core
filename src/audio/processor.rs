@@ -63,6 +63,8 @@ impl ProcessHandler for AudioProcessor {
                             let _ = self.tx.try_send(StatusMessageKind::ShowStatus(Some(
                                 self.status.show.clone(),
                             )));
+                        ControlCommand::Shutdown => {
+                            let _ = self.tx.try_send(StatusMessageKind::Shutdown);
                         }
                         _ => {}
                     }
