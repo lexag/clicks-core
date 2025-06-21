@@ -2,9 +2,9 @@ use crate::audio::{
     config::AudioConfig, notification::JACKNotificationHandler, processor::AudioProcessor,
     source::SourceConfig,
 };
-use common::network::StatusMessageKind;
+use common::network::{JACKStatus, StatusMessageKind};
 use crossbeam_channel::{Receiver, Sender};
-use jack::{AsyncClient, AudioOut, Client, ClientOptions, Error, PortFlags};
+use jack::{AsyncClient, AudioOut, Client, ClientOptions, ClientStatus, Error, PortFlags};
 
 use common::command::ControlCommand;
 
@@ -40,7 +40,16 @@ impl AudioHandler {
                     }
                 }
 
-                let processor = AudioProcessor::new(sources, ports, rx, tx);
+                let jack_status = JACKStatus {
+                    sample_rate: client.sample_rate(),
+                    buffer_size: client.buffer_size() as usize,
+                    frame_size: 0,
+                    connections: connections_to_make.clone(),
+                    client_name: client.name().to_string(),
+                    output_name: config.system_name.clone(),
+                };
+                let _ = tx.try_send(StatusMessageKind::JACKStatus(Some(jack_status.clone())));
+                let processor = AudioProcessor::new(sources, ports, rx, tx, jack_status);
                 let ac = client
                     .activate_async(JACKNotificationHandler, processor)
                     .unwrap();

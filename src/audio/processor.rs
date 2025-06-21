@@ -5,7 +5,7 @@ use crate::audio::source::SourceConfig;
 
 use common::{
     command::ControlCommand,
-    network::StatusMessageKind,
+    network::{JACKStatus, StatusMessageKind},
     status::{AudioSourceStatus, CombinedStatus},
 };
 
@@ -23,6 +23,7 @@ impl AudioProcessor {
         ports: Vec<Port<AudioOut>>,
         rx: Receiver<ControlCommand>,
         tx: Sender<StatusMessageKind>,
+        jack_status: JACKStatus,
     ) -> AudioProcessor {
         AudioProcessor {
             sources,
@@ -30,6 +31,7 @@ impl AudioProcessor {
             tx,
             rx,
             status: CombinedStatus {
+                jack_status,
                 ..Default::default()
             },
         }
@@ -63,6 +65,10 @@ impl ProcessHandler for AudioProcessor {
                             let _ = self.tx.try_send(StatusMessageKind::ShowStatus(Some(
                                 self.status.show.clone(),
                             )));
+                            let _ = self.tx.try_send(StatusMessageKind::JACKStatus(Some(
+                                self.status.jack_status.clone(),
+                            )));
+                        }
                         ControlCommand::Shutdown => {
                             let _ = self.tx.try_send(StatusMessageKind::Shutdown);
                         }
