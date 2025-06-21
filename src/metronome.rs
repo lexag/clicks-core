@@ -127,7 +127,10 @@ impl audio::source::AudioSource for Metronome {
                 self.cue = cue;
                 println!("{:?}", self.cue)
             }
-            ControlCommand::TransportZero => self.beat_idx = 0,
+            ControlCommand::TransportZero => {
+                self.beat_idx = usize::MAX;
+                self.next_beat_idx = 0
+            }
             _ => {}
         }
         return Ok(());

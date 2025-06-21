@@ -39,6 +39,7 @@ impl TimecodeInstant {
 }
 
 pub struct TimecodeSource {
+    pub active: bool,
     pub frame_rate: usize,
     pub drop_frame: bool,
     pub color_framing: bool,
@@ -52,6 +53,7 @@ pub struct TimecodeSource {
 impl Default for TimecodeSource {
     fn default() -> Self {
         TimecodeSource {
+            active: false,
             frame_rate: 25,
             volume: 0.31,
             drop_frame: false,
@@ -187,7 +189,28 @@ impl audio::source::AudioSource for TimecodeSource {
     }
     fn command(&mut self, command: ControlCommand) -> Result<(), CommandError> {
         match command {
-            ControlCommand::LoadCue(cue) => {}
+            ControlCommand::TransportZero => {
+                self.current_time.h = 0;
+                self.current_time.m = 0;
+                self.current_time.s = 0;
+                self.current_time.f = 0;
+                self.current_time.frame_progress = 0;
+
+                self.active = false;
+
+                for event in self.cue.get_beat(0).unwrap_or_default().events {
+                    match event {
+                        BeatEvent::TimecodeEvent { h, m, s, f } => {
+                            self.current_time.h = h;
+                            self.current_time.m = m;
+                            self.current_time.s = s;
+                            self.current_time.f = f;
+                            self.active = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
             _ => {}
         }
         return Ok(());
@@ -220,6 +243,7 @@ impl audio::source::AudioSource for TimecodeSource {
                     if (status.us_to_next_beat as u32)
                         < (_ps.n_frames() as u32 * 1000000) / sample_rate
                     {
+                        self.active = true;
                         self.current_time = TimecodeInstant {
                             frame_rate: self.frame_rate,
                             h,
@@ -234,7 +258,7 @@ impl audio::source::AudioSource for TimecodeSource {
             }
         }
 
-        if status.running {
+        if status.running && self.active {
             // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
             let samples_per_frame: usize = sample_rate as usize / self.frame_rate as usize;
             let samples_per_bit: usize = samples_per_frame / 80;

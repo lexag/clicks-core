@@ -13,6 +13,7 @@ pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
     ports: Vec<Port<AudioOut>>,
     tx: Sender<StatusMessageKind>,
+    tx_loopback: Sender<ControlCommand>,
     rx: Receiver<ControlCommand>,
     status: CombinedStatus,
 }
@@ -22,6 +23,7 @@ impl AudioProcessor {
         sources: Vec<SourceConfig>,
         ports: Vec<Port<AudioOut>>,
         rx: Receiver<ControlCommand>,
+        tx_loopback: Sender<ControlCommand>,
         tx: Sender<StatusMessageKind>,
         jack_status: JACKStatus,
     ) -> AudioProcessor {
@@ -29,6 +31,7 @@ impl AudioProcessor {
             sources,
             ports,
             tx,
+            tx_loopback,
             rx,
             status: CombinedStatus {
                 jack_status,
@@ -45,18 +48,49 @@ impl ProcessHandler for AudioProcessor {
             match self.rx.try_recv() {
                 Ok(cmd) => {
                     println!("RCVCMD: {:?}", cmd);
-                    match &cmd {
+                    match cmd.clone() {
                         ControlCommand::TransportStart => {
                             self.status.process_status.running = true;
                         }
                         ControlCommand::TransportStop => {
                             self.status.process_status.running = false;
                         }
+
                         ControlCommand::LoadCue(cue) => {
                             self.status.cue = cue.clone();
                             let _ = self.tx.try_send(StatusMessageKind::CueStatus(Some(
                                 self.status.cue.clone(),
                             )));
+                        }
+                        ControlCommand::LoadCueFromSelfIndex => {
+                            let _ = self.tx_loopback.try_send(ControlCommand::LoadCue(
+                                self.status.show.cues[self.status.process_status.cue_idx].clone(),
+                            ));
+                        }
+                        ControlCommand::LoadCueByIndex(idx) => {
+                            if idx > 0 && idx < self.status.show.cues.len() {
+                                self.status.process_status.cue_idx = idx;
+                                let _ = self
+                                    .tx_loopback
+                                    .try_send(ControlCommand::LoadCueFromSelfIndex);
+                            }
+                        }
+                        ControlCommand::LoadPreviousCue => {
+                            if self.status.process_status.cue_idx > 0 {
+                                self.status.process_status.cue_idx += 1;
+                                let _ = self
+                                    .tx_loopback
+                                    .try_send(ControlCommand::LoadCueFromSelfIndex);
+                            }
+                        }
+                        ControlCommand::LoadNextCue => {
+                            if self.status.process_status.cue_idx + 1 < self.status.show.cues.len()
+                            {
+                                self.status.process_status.cue_idx += 1;
+                                let _ = self
+                                    .tx_loopback
+                                    .try_send(ControlCommand::LoadCueFromSelfIndex);
+                            }
                         }
                         ControlCommand::NotifySubscribers => {
                             let _ = self.tx.try_send(StatusMessageKind::CueStatus(Some(

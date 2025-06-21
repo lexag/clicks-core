@@ -18,6 +18,7 @@ impl AudioHandler {
         config: AudioConfig,
         sources: Vec<SourceConfig>,
         rx: Receiver<ControlCommand>,
+        tx_loopback: Sender<ControlCommand>,
         tx: Sender<StatusMessageKind>,
     ) -> AudioHandler {
         let client_res = Client::new(
@@ -49,7 +50,8 @@ impl AudioHandler {
                     output_name: config.system_name.clone(),
                 };
                 let _ = tx.try_send(StatusMessageKind::JACKStatus(Some(jack_status.clone())));
-                let processor = AudioProcessor::new(sources, ports, rx, tx, jack_status);
+                let processor =
+                    AudioProcessor::new(sources, ports, rx, tx_loopback, tx, jack_status);
                 let ac = client
                     .activate_async(JACKNotificationHandler, processor)
                     .unwrap();

@@ -34,6 +34,7 @@ fn main() {
         },
         sources,
         cmd_rx,
+        cmd_tx.clone(),
         status_tx,
     );
     let _ = cmd_tx.send(ControlCommand::TransportStop);
