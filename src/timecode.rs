@@ -196,8 +196,6 @@ impl audio::source::AudioSource for TimecodeSource {
                 self.current_time.f = 0;
                 self.current_time.frame_progress = 0;
 
-                self.active = false;
-
                 for event in self.cue.get_beat(0).unwrap_or_default().events {
                     match event {
                         BeatEvent::TimecodeEvent { h, m, s, f } => {
@@ -210,6 +208,12 @@ impl audio::source::AudioSource for TimecodeSource {
                         _ => {}
                     }
                 }
+            }
+            ControlCommand::TransportStop => {
+                self.active = false;
+            }
+            ControlCommand::TransportStart => {
+                self.active = true;
             }
             _ => {}
         }
