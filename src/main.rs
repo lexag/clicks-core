@@ -3,7 +3,7 @@ mod metronome;
 mod network;
 mod timecode;
 
-use common::{self, command::ControlCommand, network::StatusMessageKind};
+use common::{self, command::ControlCommand, cue::Cue, network::StatusMessageKind, show::Show};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use metronome::Metronome;
@@ -11,7 +11,13 @@ use network::NetworkHandler;
 use timecode::TimecodeSource;
 
 fn main() {
-    let br = common::cue::Cue::example_loop();
+    let show = Show {
+        metadata: common::show::ShowMetadata {
+            name: "Development Show".to_string(),
+            date: "123456".to_string(),
+        },
+        cues: vec![Cue::example(), Cue::example_loop()],
+    };
     let sources = vec![
         audio::source::SourceConfig {
             name: "metronome".to_string(),
@@ -38,9 +44,8 @@ fn main() {
         status_tx,
     );
     let _ = cmd_tx.send(ControlCommand::TransportStop);
-    let _ = cmd_tx.send(ControlCommand::LoadCue(br));
+    let _ = cmd_tx.send(ControlCommand::LoadShow(show));
     let _ = cmd_tx.send(ControlCommand::TransportZero);
-    let _ = cmd_tx.send(ControlCommand::TransportStart);
 
     let mut nh = NetworkHandler::new("8081", cmd_tx.clone());
     nh.start();

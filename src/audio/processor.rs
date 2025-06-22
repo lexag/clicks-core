@@ -56,8 +56,18 @@ impl ProcessHandler for AudioProcessor {
                             self.status.process_status.running = false;
                         }
 
+                        ControlCommand::LoadShow(show) => {
+                            self.status.show = show;
+
+                            let _ = self.tx_loopback.try_send(ControlCommand::LoadCueByIndex(0));
+                        }
+
                         ControlCommand::LoadCue(cue) => {
+                            self.status.process_status.running = false;
                             self.status.cue = cue.clone();
+
+                            let _ = self.tx_loopback.try_send(ControlCommand::TransportStop);
+                            let _ = self.tx_loopback.try_send(ControlCommand::TransportZero);
                             let _ = self.tx.try_send(StatusMessageKind::CueStatus(Some(
                                 self.status.cue.clone(),
                             )));
@@ -68,7 +78,7 @@ impl ProcessHandler for AudioProcessor {
                             ));
                         }
                         ControlCommand::LoadCueByIndex(idx) => {
-                            if idx > 0 && idx < self.status.show.cues.len() {
+                            if idx < self.status.show.cues.len() {
                                 self.status.process_status.cue_idx = idx;
                                 let _ = self
                                     .tx_loopback
@@ -124,15 +134,6 @@ impl ProcessHandler for AudioProcessor {
             }
         }
 
-        // Get JACK Transport time ( baseline time for all time-timebase sources
-        let state = c.transport().query().unwrap();
-        let sample_time = state.pos.frame() as u64;
-        let sample_rate = state.pos.frame_rate().unwrap() as u64;
-        let t_us: u128 = ((sample_time << 16) / sample_rate) as u128;
-        self.status.process_status.h = ((t_us >> 16) / 3600).try_into().unwrap();
-        self.status.process_status.m = ((t_us >> 16) / 60 % 60).try_into().unwrap();
-        self.status.process_status.s = ((t_us >> 16) % 60).try_into().unwrap();
-
         // Get status from all sources and compile onto self.status
         let mut source_statuses: Vec<AudioSourceStatus> = vec![]; // stati??
         for source in &mut self.sources {
@@ -142,6 +143,9 @@ impl ProcessHandler for AudioProcessor {
                     self.status.process_status.beat_idx = status.beat_idx;
                     self.status.process_status.us_to_next_beat = status.us_to_next;
                     self.status.process_status.next_beat_idx = status.next_beat_idx;
+                }
+                AudioSourceStatus::TimeStatus(ref status) => {
+                    self.status.process_status.time = status.clone();
                 }
                 _ => {}
             }
@@ -163,6 +167,7 @@ impl ProcessHandler for AudioProcessor {
             }
         }
 
+        self.status.process_status.system_time = chrono::prelude::Utc::now().time().to_string();
         let _ = self.tx.try_send(StatusMessageKind::ProcessStatus(Some(
             self.status.process_status.clone(),
         )));

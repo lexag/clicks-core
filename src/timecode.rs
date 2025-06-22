@@ -3,40 +3,8 @@ use crate::audio;
 use common::{
     command::{CommandError, ControlCommand},
     cue::{Beat, BeatEvent, Cue},
-    status::{AudioSourceStatus, ProcessStatus, TimeStatus},
+    status::{AudioSourceStatus, ProcessStatus, TimeStatus, TimecodeInstant},
 };
-
-#[derive(Clone)]
-struct TimecodeInstant {
-    frame_rate: usize,
-    h: usize,
-    m: usize,
-    s: usize,
-    f: usize,
-    frame_progress: u16,
-}
-
-impl PartialEq for TimecodeInstant {
-    fn eq(&self, other: &TimecodeInstant) -> bool {
-        return self.f == other.f && self.s == other.s && self.m == other.m && self.h == other.h;
-    }
-}
-
-impl TimecodeInstant {
-    fn add_progress(&mut self, progress: u16) {
-        let prog_of = self.frame_progress as u32 + progress as u32;
-        self.frame_progress = (prog_of % 65536) as u16;
-        if prog_of > 65536 {
-            self.f += 1
-        }
-        self.s += self.f / self.frame_rate;
-        self.f %= self.frame_rate;
-        self.m += self.s / 60;
-        self.s %= 60;
-        self.h += self.m / 60;
-        self.m %= 60;
-    }
-}
 
 pub struct TimecodeSource {
     pub active: bool,
@@ -228,8 +196,12 @@ impl audio::source::AudioSource for TimecodeSource {
     ) -> Result<&[f32], jack::Error> {
         let sample_rate = _c.sample_rate() as u32;
         let last_cycle_frame = self.current_time.clone();
-        self.current_time
-            .add_progress((_ps.n_frames() * self.frame_rate as u32 * 65536 / sample_rate) as u16);
+
+        if self.active {
+            self.current_time.add_progress(
+                (_ps.n_frames() * self.frame_rate as u32 * 65536 / sample_rate) as u16,
+            );
+        }
         for event in self
             .cue
             .get_beat(status.next_beat_idx)
