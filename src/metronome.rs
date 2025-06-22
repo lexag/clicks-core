@@ -129,7 +129,8 @@ impl audio::source::AudioSource for Metronome {
             }
             ControlCommand::TransportZero => {
                 self.beat_idx = usize::MAX;
-                self.next_beat_idx = 0
+                self.next_beat_idx = 0;
+                self.last_beat_time = 0;
             }
             _ => {}
         }
