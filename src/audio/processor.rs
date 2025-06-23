@@ -1,5 +1,7 @@
 use crossbeam_channel::{Receiver, Sender};
-use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope};
+use jack::{
+    AudioIn, AudioOut, Client, Control, Port, PortFlags, ProcessHandler, ProcessScope, Unowned,
+};
 
 use crate::audio::source::SourceConfig;
 
@@ -11,30 +13,28 @@ use common::{
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
-    ports: Vec<Port<AudioOut>>,
     tx: Sender<StatusMessageKind>,
     tx_loopback: Sender<ControlCommand>,
     rx: Receiver<ControlCommand>,
     status: CombinedStatus,
+    ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
 }
 
 impl AudioProcessor {
     pub fn new(
         sources: Vec<SourceConfig>,
-        ports: Vec<Port<AudioOut>>,
+        ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
         rx: Receiver<ControlCommand>,
         tx_loopback: Sender<ControlCommand>,
         tx: Sender<StatusMessageKind>,
-        jack_status: JACKStatus,
     ) -> AudioProcessor {
         AudioProcessor {
-            sources,
             ports,
+            sources,
             tx,
             tx_loopback,
             rx,
             status: CombinedStatus {
-                jack_status,
                 ..Default::default()
             },
         }
@@ -102,20 +102,15 @@ impl ProcessHandler for AudioProcessor {
                                     .try_send(ControlCommand::LoadCueFromSelfIndex);
                             }
                         }
-                        ControlCommand::NotifySubscribers => {
+                        ControlCommand::DumpStatus => {
                             let _ = self.tx.try_send(StatusMessageKind::CueStatus(Some(
                                 self.status.cue.clone(),
                             )));
                             let _ = self.tx.try_send(StatusMessageKind::ShowStatus(Some(
                                 self.status.show.clone(),
                             )));
-                            let _ = self.tx.try_send(StatusMessageKind::JACKStatus(Some(
-                                self.status.jack_status.clone(),
-                            )));
                         }
-                        ControlCommand::Shutdown => {
-                            let _ = self.tx.try_send(StatusMessageKind::Shutdown);
-                        }
+
                         _ => {}
                     }
 
@@ -160,7 +155,7 @@ impl ProcessHandler for AudioProcessor {
                 .source_device
                 .send_buffer(c, ps, self.status.process_status.clone());
             if let Ok(buf) = res {
-                self.ports[i].as_mut_slice(ps).clone_from_slice(buf);
+                self.ports.0[i].as_mut_slice(ps).clone_from_slice(buf);
             } else {
                 println!("Audio error occured in source {}", i);
                 return Control::Quit;

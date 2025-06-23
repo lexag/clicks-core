@@ -6,6 +6,7 @@ use common::{
     network::{ControlMessageKind, NetworkStatus, StatusMessageKind, SubscriberInfo},
 };
 use crossbeam_channel::Sender;
+use jack::Control;
 
 pub struct NetworkHandler {
     socket: UdpSocket,
@@ -28,7 +29,7 @@ impl NetworkHandler {
         let _ = self.socket.set_nonblocking(true);
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> Option<ControlMessageKind> {
         let mut buf = [0; 1024];
         match self.socket.recv_from(&mut buf) {
             Ok((amt, src)) => {
@@ -47,11 +48,8 @@ impl NetworkHandler {
                             );
                         }
                     };
-                match msg {
+                match msg.clone() {
                     ControlMessageKind::Ping => {}
-                    ControlMessageKind::ControlCommand(cmd) => {
-                        let _ = self.cmd_tx.send(cmd);
-                    }
                     ControlMessageKind::SubscribeRequest(info) => {
                         let mut recognized_subscriber = false;
                         for subscriber in &mut self.subscribers {
@@ -64,10 +62,10 @@ impl NetworkHandler {
                             println!("New subscriber: {info:?}");
                             self.subscribers.push(info);
                         }
-                        let _ = self.cmd_tx.send(ControlCommand::NotifySubscribers);
                         self.send_to_all(StatusMessageKind::NetworkStatus(Some(NetworkStatus {
                             subscribers: self.subscribers.clone(),
                         })));
+                        return Some(ControlMessageKind::NotifySubscribers);
                     }
                     ControlMessageKind::UnsubscribeRequest(info) => {
                         self.subscribers = self
@@ -76,16 +74,18 @@ impl NetworkHandler {
                             .into_iter()
                             .filter(|sub| !(sub.address == info.address && sub.port == info.port))
                             .collect();
-                        let _ = self.cmd_tx.send(ControlCommand::NotifySubscribers);
                         self.send_to_all(StatusMessageKind::NetworkStatus(Some(NetworkStatus {
                             subscribers: self.subscribers.clone(),
                         })));
+                        return Some(ControlMessageKind::NotifySubscribers);
                     }
                     _ => {}
                 }
+                return Some(msg);
             }
             Err(_err) => {}
         };
+        return None;
     }
 
     pub fn send_to_all(&mut self, msg: StatusMessageKind) {

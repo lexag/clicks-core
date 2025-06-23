@@ -125,7 +125,7 @@ impl audio::source::AudioSource for Metronome {
         match command {
             ControlCommand::LoadCue(cue) => {
                 self.cue = cue;
-                println!("{:?}", self.cue)
+                //println!("{:?}", self.cue)
             }
             ControlCommand::TransportZero => {
                 self.beat_idx = usize::MAX;

@@ -1,10 +1,15 @@
+use std::sync::Weak;
+
 use crate::audio::{
     config::AudioConfig, notification::JACKNotificationHandler, processor::AudioProcessor,
     source::SourceConfig,
 };
 use common::network::{JACKStatus, StatusMessageKind};
 use crossbeam_channel::{Receiver, Sender};
-use jack::{AsyncClient, AudioOut, Client, ClientOptions, ClientStatus, Error, PortFlags};
+use jack::{
+    AsyncClient, AudioIn, AudioOut, Client, ClientOptions, ClientStatus, Error, Port, PortFlags,
+    Unowned,
+};
 
 use common::command::ControlCommand;
 
@@ -28,38 +33,54 @@ impl AudioHandler {
         match client_res {
             Ok((client, status)) => {
                 println!("Opened JACK client ({status:?})",);
-                let mut ports = vec![];
-                let mut connections_to_make = vec![];
-                for source in &sources {
-                    ports.push(
+                let mut ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>) = (vec![], vec![]);
+
+                // Register io_matrix.0 amount of ports on the client and save for processor
+                // reference
+                for c_out_idx in 0..config.io_size.0 {
+                    ports.0.push(
                         client
-                            .register_port(&source.name, AudioOut::default())
-                            .unwrap(),
+                            .register_port(&c_out_idx.to_string(), AudioOut::default())
+                            .expect("Port register failed"),
                     );
-                    for dest in &source.connections {
-                        connections_to_make.push((source.name.clone(), dest.clone()));
-                    }
                 }
 
+                // Populate ports.1 with io_matrix.1 amount of ports on the system output. If
+                // io_matrix.1 > number of physical ports, overflow and map port 0 again, then port
+                // 1 etc.
+
+                let mut o_ports = client.ports(
+                    Some(&config.system_name),
+                    Some("32 bit float mono audio"),
+                    PortFlags::IS_INPUT,
+                );
+                o_ports.sort_by_key(|name| {
+                    let mut new_name = name.clone();
+                    new_name.retain(|c| c.is_numeric());
+                    return new_name.parse::<usize>().unwrap_or_default();
+                });
+                ports.1 = o_ports
+                    .iter()
+                    .map(|name| client.port_by_name(name).unwrap())
+                    .collect();
+
+                println!("{:?}", ports.1);
                 let jack_status = JACKStatus {
+                    io_size: config.io_size,
                     sample_rate: client.sample_rate(),
                     buffer_size: client.buffer_size() as usize,
+                    connections: vec![],
                     frame_size: 0,
-                    connections: connections_to_make.clone(),
-                    client_name: client.name().to_string(),
+                    client_name: config.client_name.clone(),
                     output_name: config.system_name.clone(),
                 };
                 let _ = tx.try_send(StatusMessageKind::JACKStatus(Some(jack_status.clone())));
-                let processor =
-                    AudioProcessor::new(sources, ports, rx, tx_loopback, tx, jack_status);
+                let processor = AudioProcessor::new(sources, ports, rx, tx_loopback, tx);
                 let ac = client
                     .activate_async(JACKNotificationHandler, processor)
                     .unwrap();
                 let ah = AudioHandler { client: ac, config };
 
-                for (from, to) in connections_to_make {
-                    ah.try_connect_ports(from, to);
-                }
                 return ah;
             }
             Err(err) => {
@@ -68,33 +89,83 @@ impl AudioHandler {
         }
     }
 
-    fn try_connect_ports(&self, from: String, to: String) -> bool {
-        if let Err(err) = self.client.as_client().connect_ports_by_name(
-            &format!("{}:{from}", self.config.client_name),
-            &format!("{}:{to}", self.config.system_name),
-        ) {
-            match err {
-                Error::PortConnectionError {
-                    source,
-                    destination,
-                    code_or_message,
-                } => {
-                    println!(
-                        "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. {code_or_message}"
-                    );
-                    println!("Available ports are:");
-                    self.print_ports();
-                    return true;
-                }
-                _ => {
-                    println!("Unhandled JACK error connecting [{from}] to [{to}]");
-                    return false;
-                }
-            }
+    fn get_ports(&self) -> (Vec<Port<Unowned>>, Vec<Port<Unowned>>) {
+        let mut ports: (Vec<Port<Unowned>>, Vec<Port<Unowned>>) = (vec![], vec![]);
+        let mut i_ports = self.client.as_client().ports(
+            Some(&self.config.client_name),
+            Some("32 bit float mono audio"),
+            PortFlags::IS_OUTPUT,
+        );
+        i_ports.sort_by_key(|name| {
+            let mut new_name = name.clone();
+            new_name.retain(|c| c.is_numeric());
+            return new_name.parse::<usize>().unwrap_or_default();
+        });
+        ports.0 = i_ports
+            .iter()
+            .map(|name| self.client.as_client().port_by_name(name).unwrap())
+            .collect();
+
+        let mut o_ports = self.client.as_client().ports(
+            Some(&self.config.system_name),
+            Some("32 bit float mono audio"),
+            PortFlags::IS_INPUT,
+        );
+        o_ports.sort_by_key(|name| {
+            let mut new_name = name.clone();
+            new_name.retain(|c| c.is_numeric());
+            return new_name.parse::<usize>().unwrap_or_default();
+        });
+        ports.1 = o_ports
+            .iter()
+            .map(|name| self.client.as_client().port_by_name(name).unwrap())
+            .collect();
+
+        return ports;
+    }
+
+    pub fn try_route_ports(&self, from: usize, to: usize, connect: bool) -> bool {
+        let ports = self.get_ports();
+        let p_from = ports.0[from].clone();
+        let p_to = ports.1[to].clone();
+        let res = if connect {
+            self.client.as_client().connect_ports(&p_from, &p_to)
         } else {
+            self.client.as_client().disconnect_ports(&p_from, &p_to)
+        };
+
+        if let Ok(_) = res {
             println!("Connected [{from}] to [{to}]");
             return true;
         }
+
+        match res.unwrap_err() {
+            Error::PortConnectionError {
+                source,
+                destination,
+                code_or_message,
+            } => {
+                println!(
+                        "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. {code_or_message}"
+                    );
+                println!("Available ports are:");
+                self.print_ports();
+            }
+            Error::PortAlreadyConnected(source, destination) => {
+                println!(
+                        "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. Ports are already connected."
+                    );
+            }
+            Error::PortDisconnectionError => {
+                println!(
+                    "JACK Disconnection Error occured attempting to connect port #{from} to #{to}."
+                );
+            }
+            _ => {
+                println!("Unhandled JACK error connecting [{from}] to [{to}]");
+            }
+        }
+        return false;
     }
 
     fn print_ports(&self) {
@@ -111,5 +182,40 @@ impl AudioHandler {
         for port in port_names {
             println!("{}", port);
         }
+    }
+
+    pub fn get_jack_status(&self) -> JACKStatus {
+        let ports = self.get_ports();
+        return JACKStatus {
+            io_size: self.config.io_size,
+            buffer_size: self.client.as_client().buffer_size() as usize,
+            sample_rate: self.client.as_client().sample_rate(),
+            frame_size: 0,
+            connections: ports
+                .0
+                .iter()
+                .enumerate()
+                .map(|(a_idx, a_port)| {
+                    ports
+                        .1
+                        .iter()
+                        .enumerate()
+                        .map(|(b_idx, b_port)| {
+                            if a_port
+                                .is_connected_to(&b_port.name().unwrap())
+                                .unwrap_or_default()
+                            {
+                                (a_idx, b_idx)
+                            } else {
+                                (usize::MAX, usize::MAX)
+                            }
+                        })
+                        .collect::<Vec<(usize, usize)>>()
+                })
+                .flatten()
+                .collect(),
+            client_name: self.config.client_name.clone(),
+            output_name: self.config.system_name.clone(),
+        };
     }
 }

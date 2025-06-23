@@ -17,6 +17,5 @@ pub trait AudioSource: Send {
 
 pub struct SourceConfig {
     pub name: String,
-    pub connections: Vec<String>,
     pub source_device: Box<dyn AudioSource>,
 }
