@@ -11,12 +11,57 @@ use common::{
     show::Show,
 };
 
+use clap::Parser;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use metronome::Metronome;
 use network::NetworkHandler;
 use timecode::TimecodeSource;
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(long, default_value_t = false)]
+    reset_config: bool,
+}
+
 fn main() {
+    let args = Args::parse();
+
+    let data_path = match std::process::Command::new("find")
+        .arg("/")
+        .arg("-name")
+        .arg("clicks.show")
+        .output()
+    {
+        Err(err) => {
+            panic!("Could not find clicks show data. {err}");
+        }
+        Ok(res) => {
+            println!(
+                "stdout find: {}",
+                res.stdout.iter().map(|&c| c as char).collect::<String>()
+            );
+            let results = res.stdout.iter().map(|&c| c as char).collect::<String>();
+            let path = results.split('\n').nth(0).unwrap_or_default().trim();
+
+            if path.len() == 0 {
+                panic!("Could not find clicks show data. No results.");
+            } else {
+                path.to_string()
+            }
+        }
+    };
+
+    if args.reset_config {
+        let _ = std::fs::write(
+            data_path.clone() + "/audio.json",
+            serde_json::to_string_pretty(&common::config::AudioConfiguration::default()).unwrap(),
+        );
+    }
+    let audio_configuration = serde_json::from_str::<common::config::AudioConfiguration>(
+        &std::fs::read_to_string(data_path + "/audio.json").unwrap(),
+    );
+
     let show = Show {
         metadata: common::show::ShowMetadata {
             name: "Development Show".to_string(),
@@ -73,6 +118,11 @@ fn main() {
                     let _ = cmd_tx.send(ControlCommand::DumpStatus);
                     nh.send_to_all(StatusMessageKind::JACKStatus(Some(ah.get_jack_status())));
                 }
+                ControlMessageKind::Shutdown => {
+                    nh.send_to_all(StatusMessageKind::Shutdown);
+                    let _ = ah.client.deactivate();
+                    break;
+                }
                 _ => {}
             },
             None => {}
@@ -84,9 +134,6 @@ fn main() {
             Ok(msg) => {
                 nh.send_to_all(msg.clone());
                 match msg {
-                    StatusMessageKind::Shutdown => {
-                        break;
-                    }
                     _ => {}
                 }
             }
