@@ -53,14 +53,18 @@ fn main() {
     };
 
     if args.reset_config {
-        let _ = std::fs::write(
+        match std::fs::write(
             data_path.clone() + "/audio.json",
             serde_json::to_string_pretty(&common::config::AudioConfiguration::default()).unwrap(),
-        );
+        ) {
+            Ok(_) => return,
+            Err(err) => panic!("{err}"),
+        }
     }
     let audio_configuration = serde_json::from_str::<common::config::AudioConfiguration>(
         &std::fs::read_to_string(data_path + "/audio.json").unwrap(),
-    );
+    )
+    .unwrap();
 
     let show = Show {
         metadata: common::show::ShowMetadata {
@@ -82,12 +86,8 @@ fn main() {
     let (cmd_tx, cmd_rx): (Sender<ControlCommand>, Receiver<ControlCommand>) = unbounded();
     let (status_tx, status_rx): (Sender<StatusMessageKind>, Receiver<StatusMessageKind>) =
         unbounded();
-    let ah = audio::handler::AudioHandler::new(
-        audio::config::AudioConfig {
-            client_name: "clicks-rust".to_string(),
-            system_name: "system".to_string(),
-            io_size: (2, 2),
-        },
+    let mut ah = audio::handler::AudioHandler::new(
+        audio_configuration,
         sources,
         cmd_rx,
         cmd_tx.clone(),
@@ -120,7 +120,7 @@ fn main() {
                 }
                 ControlMessageKind::Shutdown => {
                     nh.send_to_all(StatusMessageKind::Shutdown);
-                    let _ = ah.client.deactivate();
+                    ah.shutdown();
                     break;
                 }
                 _ => {}
