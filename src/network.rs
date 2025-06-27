@@ -1,5 +1,6 @@
 use std::net::UdpSocket;
 
+use crate::logger;
 use chrono::{DateTime, Utc};
 use common::{
     command::ControlCommand,
@@ -59,7 +60,14 @@ impl NetworkHandler {
                             }
                         }
                         if !recognized_subscriber {
-                            println!("New subscriber: {info:?}");
+                            logger::log(
+                                format!(
+                                    "New subscriber: {} at [{}:{}] subscribing to {:?}.",
+                                    info.identifier, info.address, info.port, info.message_kinds
+                                ),
+                                logger::LogContext::Network,
+                                logger::LogKind::Note,
+                            );
                             self.subscribers.push(info);
                         }
                         self.send_to_all(StatusMessageKind::NetworkStatus(Some(NetworkStatus {
@@ -104,16 +112,17 @@ impl NetworkHandler {
         for subscriber in &self.subscribers {
             for msg_kind in &subscriber.message_kinds {
                 if std::mem::discriminant(&msg) == std::mem::discriminant(msg_kind) {
-                    //println!("{}", serde_json::to_string(&msg).unwrap());
                     match self.socket.send_to(
                         serde_json::to_string(&msg).unwrap().as_bytes(),
                         format!("{}:{}", subscriber.address, subscriber.port),
                     ) {
-                        Ok(amt) => {
-                            //println!("{}", amt);
-                        }
+                        Ok(amt) => {}
                         Err(err) => {
-                            println!("{}", err);
+                            logger::log(
+                                format!("Subscriber send error: {err}"),
+                                logger::LogContext::Network,
+                                logger::LogKind::Error,
+                            );
                         }
                     }
                 }

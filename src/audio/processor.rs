@@ -3,7 +3,7 @@ use jack::{
     AudioIn, AudioOut, Client, Control, Port, PortFlags, ProcessHandler, ProcessScope, Unowned,
 };
 
-use crate::audio::source::SourceConfig;
+use crate::{audio::source::SourceConfig, logger};
 
 use common::{
     command::ControlCommand,
@@ -47,7 +47,11 @@ impl ProcessHandler for AudioProcessor {
         loop {
             match self.rx.try_recv() {
                 Ok(cmd) => {
-                    println!("RCVCMD: {:?}", cmd);
+                    logger::log(
+                        format!("ControlCommand: {cmd}"),
+                        logger::LogContext::AudioProcessor,
+                        logger::LogKind::Command,
+                    );
                     match cmd.clone() {
                         ControlCommand::TransportStart => {
                             self.status.process_status.running = true;
@@ -125,7 +129,11 @@ impl ProcessHandler for AudioProcessor {
                 Err(crossbeam_channel::TryRecvError::Empty) => {
                     break;
                 }
-                Err(err) => println!("CMDERR: {}", err),
+                Err(err) => logger::log(
+                    format!("Error reading command: {}", err),
+                    logger::LogContext::AudioProcessor,
+                    logger::LogKind::Error,
+                ),
             }
         }
 
@@ -157,7 +165,11 @@ impl ProcessHandler for AudioProcessor {
             if let Ok(buf) = res {
                 self.ports.0[i].as_mut_slice(ps).clone_from_slice(buf);
             } else {
-                println!("Audio error occured in source {}", i);
+                logger::log(
+                    format!("Audio error occured in source {}.", i),
+                    logger::LogContext::AudioProcessor,
+                    logger::LogKind::Error,
+                );
                 return Control::Quit;
             }
         }
@@ -167,7 +179,6 @@ impl ProcessHandler for AudioProcessor {
             self.status.process_status.clone(),
         )));
 
-        //println!("{:?}", process_status);
         return Control::Continue;
     }
 }

@@ -1,4 +1,5 @@
 mod audio;
+mod logger;
 mod metronome;
 mod network;
 mod timecode;

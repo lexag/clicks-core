@@ -1,8 +1,11 @@
 use std::sync::Weak;
 
-use crate::audio::{
-    config::AudioConfig, notification::JACKNotificationHandler, processor::AudioProcessor,
-    source::SourceConfig,
+use crate::{
+    audio::{
+        config::AudioConfig, notification::JACKNotificationHandler, processor::AudioProcessor,
+        source::SourceConfig,
+    },
+    logger,
 };
 use common::network::{JACKStatus, StatusMessageKind};
 use crossbeam_channel::{Receiver, Sender};
@@ -41,8 +44,16 @@ impl AudioHandler {
             ClientOptions::NO_START_SERVER,
         );
         match client_res {
+            Err(err) => {
+                panic!("Couldn't start JACK client: {err:?}");
+            }
             Ok((client, status)) => {
-                println!("Opened JACK client ({status:?})",);
+                logger::log(
+                    format!("Opened JACK client ({status:?})"),
+                    logger::LogContext::AudioHandler,
+                    logger::LogKind::Note,
+                );
+
                 let mut ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>) = (vec![], vec![]);
 
                 // Register io_matrix.0 amount of ports on the client and save for processor
@@ -74,7 +85,11 @@ impl AudioHandler {
                     .map(|name| client.port_by_name(name).unwrap())
                     .collect();
 
-                println!("{:?}", ports.1);
+                logger::log(
+                    format!("Found {} system ports.", ports.1.len()),
+                    logger::LogContext::AudioHandler,
+                    logger::LogKind::Note,
+                );
                 let jack_status = JACKStatus {
                     io_size: (config.client.num_channels, config.server.num_channels),
                     sample_rate: client.sample_rate(),
@@ -96,9 +111,6 @@ impl AudioHandler {
                 };
 
                 return ah;
-            }
-            Err(err) => {
-                panic!("Couldn't start JACK client: {err:?}")
             }
         }
     }
@@ -149,7 +161,12 @@ impl AudioHandler {
         };
 
         if let Ok(_) = res {
-            println!("Connected [{from}] to [{to}]");
+            logger::log(
+                format!("Set port [{from}] -> [{to}] to {connect}"),
+                logger::LogContext::AudioHandler,
+                logger::LogKind::Note,
+            );
+
             return true;
         }
 
@@ -159,43 +176,29 @@ impl AudioHandler {
                 destination,
                 code_or_message,
             } => {
-                println!(
-                        "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. {code_or_message}"
-                    );
-                println!("Available ports are:");
-                self.print_ports();
+                logger::log(format!("JACK Connection Error occured attempting to connect [{source}] to [{destination}]. {code_or_message}"), logger::LogContext::AudioHandler, logger::LogKind::Error);
             }
             Error::PortAlreadyConnected(source, destination) => {
-                println!(
+                logger::log(format!(
                         "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. Ports are already connected."
-                    );
+                    ), logger::LogContext::AudioHandler, logger::LogKind::Error);
             }
             Error::PortDisconnectionError => {
-                println!(
-                    "JACK Disconnection Error occured attempting to connect port #{from} to #{to}."
+                logger::log(
+                    format!("JACK Disconnection Error occured attempting to connect port #{from} to #{to}."),
+                    logger::LogContext::AudioHandler,
+                    logger::LogKind::Error,
                 );
             }
             _ => {
-                println!("Unhandled JACK error connecting [{from}] to [{to}]");
+                logger::log(
+                    format!("Unhandled JACK error connecting [{from}] to [{to}]"),
+                    logger::LogContext::AudioHandler,
+                    logger::LogKind::Error,
+                );
             }
         }
         return false;
-    }
-
-    fn print_ports(&self) {
-        let mut port_names = self.client.as_client().ports(
-            Some(self.config.client.name.as_str()),
-            Some("audio"),
-            PortFlags::IS_OUTPUT,
-        );
-        port_names.extend_from_slice(&self.client.as_client().ports(
-            Some("system"),
-            Some("audio"),
-            PortFlags::IS_INPUT,
-        ));
-        for port in port_names {
-            println!("{}", port);
-        }
     }
 
     pub fn get_jack_status(&self) -> JACKStatus {

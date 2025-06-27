@@ -117,16 +117,12 @@ impl TimecodeSource {
         let mut current_parity = 1;
         for bit_idx in 0..80 {
             let frame_bit = (0x1 << bit_idx) & bits;
-            //println!("{}", frame_bit > 0);
             for sample_idx in 0..samples_per_bit as usize {
                 if sample_idx == 0 {
                     current_parity *= -1;
-                    //println!("Flip at {sample_idx} / {samples_per_bit} bit is {frame_bit}")
                 } else if sample_idx == samples_per_bit as usize / 2 && frame_bit != 0 {
                     current_parity *= -1;
-                    //println!("Flip at {sample_idx} / {samples_per_bit} bit is {frame_bit}")
                 }
-                //println!("{sample_idx}");
                 buf[sample_idx + bit_idx as usize * samples_per_bit as usize] =
                     (current_parity as f32) * self.volume;
             }
@@ -255,8 +251,6 @@ impl audio::source::AudioSource for TimecodeSource {
                     [0..samples_per_frame];
                 self.frame_buffer[samples_per_frame..2 * samples_per_frame]
                     .copy_from_slice(&next_frame_buf);
-                //println!("{next_frame_bits:080b}");
-                //println!("{samples_per_bit} per bit, {samples_per_frame} per frame");
             }
 
             return Ok(&self.frame_buffer
