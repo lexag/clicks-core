@@ -5,6 +5,7 @@ mod boot;
 mod logger;
 mod metronome;
 mod network;
+mod playback;
 mod timecode;
 
 use common::{

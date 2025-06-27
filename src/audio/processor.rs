@@ -1,6 +1,7 @@
 use crossbeam_channel::{Receiver, Sender};
 use jack::{
-    AudioIn, AudioOut, Client, Control, Port, PortFlags, ProcessHandler, ProcessScope, Unowned,
+    AudioIn, AudioOut, Client, Control, NotificationHandler, Port, PortFlags, ProcessHandler,
+    ProcessScope, Unowned,
 };
 
 use crate::{audio::source::SourceConfig, logger};
