@@ -77,7 +77,7 @@ pub fn find_config_path() -> Result<PathBuf, BootError> {
 pub fn get_config(path: PathBuf) -> Result<BootConfig, BootError> {
     match serde_json::from_str::<BootConfig>(
         std::str::from_utf8(
-            &std::fs::read(path.join(PathBuf::from_str("/config.json").unwrap())).unwrap(),
+            &std::fs::read(path.join(PathBuf::from_str("config.json").unwrap())).unwrap(),
         )
         .unwrap(),
     ) {
