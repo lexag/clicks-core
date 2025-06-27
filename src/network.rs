@@ -20,7 +20,8 @@ impl NetworkHandler {
         let nh = NetworkHandler {
             subscribers: vec![],
             cmd_tx,
-            socket: UdpSocket::bind(format!("127.0.0.1:{port}")).expect("couldn't open local port"),
+            socket: UdpSocket::bind(format!("192.168.1.125:{port}"))
+                .expect("couldn't open local port"),
         };
         let _ = nh.socket.set_nonblocking(true);
         return nh;
