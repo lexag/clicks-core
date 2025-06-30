@@ -323,6 +323,11 @@ impl AudioSource for PlaybackDevice {
         _c: &jack::Client,
         _ps: &jack::ProcessScope,
     ) -> common::status::AudioSourceStatus {
-        AudioSourceStatus::None
+        AudioSourceStatus::PlaybackStatus(common::status::PlaybackStatus {
+            clips: self.clips.iter().map(|c| c.read_index()).collect(),
+            clip_idx: self.current_clip,
+            current_sample: self.current_sample,
+            playing: self.active,
+        })
     }
 }
