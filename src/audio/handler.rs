@@ -18,6 +18,7 @@ use common::command::ControlCommand;
 
 pub struct AudioHandler {
     pub client: AsyncClient<JACKNotificationHandler, AudioProcessor>,
+    pub num_sources: usize,
     config: common::config::AudioConfiguration,
     jack_server_process: std::process::Child,
 }
@@ -58,7 +59,7 @@ impl AudioHandler {
 
                 // Register io_matrix.0 amount of ports on the client and save for processor
                 // reference
-                for c_out_idx in 0..config.client.num_channels {
+                for c_out_idx in 0..sources.len() {
                     ports.0.push(
                         client
                             .register_port(&c_out_idx.to_string(), AudioOut::default())
@@ -91,7 +92,7 @@ impl AudioHandler {
                     logger::LogKind::Note,
                 );
                 let jack_status = JACKStatus {
-                    io_size: (config.client.num_channels, config.server.num_channels),
+                    io_size: (sources.len(), config.server.num_channels),
                     sample_rate: client.sample_rate(),
                     buffer_size: client.buffer_size() as usize,
                     connections: vec![],
@@ -99,6 +100,7 @@ impl AudioHandler {
                     client_name: config.client.name.clone(),
                     output_name: config.server.system_name.clone(),
                 };
+                let num_sources = sources.len();
                 let _ = tx.try_send(StatusMessageKind::JACKStatus(Some(jack_status.clone())));
                 let processor = AudioProcessor::new(sources, ports, rx, tx_loopback, tx);
                 let ac = client
@@ -106,6 +108,7 @@ impl AudioHandler {
                     .unwrap();
                 let ah = AudioHandler {
                     client: ac,
+                    num_sources,
                     config,
                     jack_server_process,
                 };
@@ -204,10 +207,7 @@ impl AudioHandler {
     pub fn get_jack_status(&self) -> JACKStatus {
         let ports = self.get_ports();
         return JACKStatus {
-            io_size: (
-                self.config.client.num_channels,
-                self.config.server.num_channels,
-            ),
+            io_size: (self.num_sources, self.config.server.num_channels),
             buffer_size: self.client.as_client().buffer_size() as usize,
             sample_rate: self.client.as_client().sample_rate(),
             frame_size: 0,
@@ -233,6 +233,7 @@ impl AudioHandler {
                         .collect::<Vec<(usize, usize)>>()
                 })
                 .flatten()
+                .filter(|(a, b)| *a < usize::MAX && *b < usize::MAX)
                 .collect(),
             client_name: self.config.client.name.clone(),
             output_name: self.config.server.system_name.clone(),

@@ -129,5 +129,14 @@ impl NetworkHandler {
                 }
             }
         }
+        if std::mem::discriminant(&msg)
+            != std::mem::discriminant(&StatusMessageKind::ProcessStatus(None))
+        {
+            logger::log(
+                format!("{}", serde_json::to_string(&msg).unwrap()),
+                logger::LogContext::Network,
+                logger::LogKind::Debug,
+            );
+        }
     }
 }

@@ -1,4 +1,7 @@
-use crate::audio::source::AudioSource;
+use crate::{
+    audio::source::{AudioSource, SourceConfig},
+    logger,
+};
 use arc_swap::ArcSwap;
 use common::{
     command::ControlCommand,
@@ -8,7 +11,8 @@ use common::{
 };
 use jack::{AudioOut, Client, ClientOptions, Control, ProcessHandler, ProcessScope};
 use std::{
-    collections::HashMap, fs::File, num, path::PathBuf, str::FromStr, sync::Arc, thread::current,
+    collections::HashMap, fmt::Debug, fs::File, num, ops::Div, path::PathBuf, str::FromStr,
+    sync::Arc, thread::current,
 };
 
 const LOCAL_BUF_SIZE: usize = 48000;
@@ -18,6 +22,12 @@ struct AudioClip {
     pub clip_idx: Arc<ArcSwap<usize>>,
     buffer: Arc<ArcSwap<AudioBuffer>>,
     local_buffer: [f32; LOCAL_BUF_SIZE],
+}
+
+impl Debug for AudioClip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "AudioClip: clip_idx: {}", self.clip_idx)
+    }
 }
 
 impl AudioClip {
@@ -37,9 +47,9 @@ impl AudioClip {
 
     // Called in RT thread
     pub fn read_buffer_slice(&mut self, start: u32, len: usize) -> &[f32] {
-        self.local_buffer
-            .copy_from_slice(&self.buffer.load()[start as usize..start as usize + LOCAL_BUF_SIZE]);
-        &self.local_buffer[0..len]
+        let buf = &self.buffer.load();
+        self.local_buffer[..len].copy_from_slice(&buf[start as usize..start as usize + len]);
+        return &self.local_buffer[0..len];
     }
     pub fn read_index(&self) -> usize {
         **self.clip_idx.load()
@@ -55,14 +65,14 @@ pub struct PlaybackHandler {
 }
 
 impl PlaybackHandler {
-    fn new(config_path: PathBuf) -> PlaybackHandler {
+    pub fn new(config_path: PathBuf) -> PlaybackHandler {
         PlaybackHandler {
             config_path,
             clips: HashMap::new(),
         }
     }
 
-    fn load_show(&mut self, show: Show, num_channels: usize) {
+    pub fn load_show(&mut self, show: Show, num_channels: usize) {
         let mut max_clips_per_cue_per_channel: HashMap<usize, usize> = HashMap::new();
         for (cue_idx, cue) in show.cues.iter().enumerate() {
             let mut clips_in_cue = 0;
@@ -84,7 +94,7 @@ impl PlaybackHandler {
                 cue_idx,
                 usize::max(
                     clips_in_cue,
-                    *(max_clips_per_cue_per_channel.get(&cue_idx).unwrap()),
+                    *(max_clips_per_cue_per_channel.get(&cue_idx).unwrap_or(&0)),
                 ),
             );
         }
@@ -93,6 +103,9 @@ impl PlaybackHandler {
             let max_clips_in_channel: usize =
                 *(max_clips_per_cue_per_channel.get(&channel_idx).unwrap());
             for clip_idx in 0..max_clips_in_channel {
+                if !self.clips.contains_key(&channel_idx) {
+                    self.clips.insert(channel_idx, vec![]);
+                }
                 self.clips
                     .get_mut(&channel_idx)
                     .unwrap()
@@ -101,7 +114,7 @@ impl PlaybackHandler {
         }
     }
 
-    fn create_audio_sources(&mut self) -> Vec<PlaybackDevice> {
+    pub fn create_audio_sources(&mut self) -> Vec<SourceConfig> {
         let mut devices = vec![];
         for (channel_idx, clips) in &self.clips {
             let mut device = PlaybackDevice::new(*channel_idx, self.config_path.clone());
@@ -112,12 +125,16 @@ impl PlaybackHandler {
                     local_buffer: [0.0f32; LOCAL_BUF_SIZE],
                 });
             }
-            devices.push(device);
+            devices.push(SourceConfig {
+                name: format!("playback_{channel_idx}"),
+                source_device: Box::new(device),
+            });
         }
         return devices;
     }
 
-    fn load_cue(&self, cue: Cue) {
+    pub fn load_cue(&self, cue: Cue) {
+        println!("Playback load cue");
         let mut clips_per_cue: HashMap<usize, Vec<usize>> = HashMap::new();
         for beat in cue.get_beats() {
             for event in beat.events {
@@ -126,7 +143,12 @@ impl PlaybackHandler {
                         channel_idx,
                         clip_idx,
                         sample,
-                    } => clips_per_cue.get_mut(&channel_idx).unwrap().push(clip_idx),
+                    } => {
+                        if !clips_per_cue.contains_key(&channel_idx) {
+                            clips_per_cue.insert(channel_idx, vec![]);
+                        }
+                        clips_per_cue.get_mut(&channel_idx).unwrap().push(clip_idx);
+                    }
                     _ => {}
                 }
             }
@@ -136,19 +158,53 @@ impl PlaybackHandler {
             clips_in_cue.sort();
             clips_in_cue.dedup();
             for (incue_index, clip_idx) in clips_in_cue.iter().enumerate() {
-                let mut reader = hound::WavReader::open(
-                    self.config_path
-                        .join(format!("{:0>3}/{:0>3}.wav", channel_idx, clip_idx)),
-                )
+                let mut reader = hound::WavReader::open(self.config_path.join(format!(
+                    "playback_media/{:0>3}/{:0>3}.wav",
+                    channel_idx, clip_idx
+                )))
                 .unwrap();
-                let buf = reader.samples::<f32>().map(|s| s.unwrap()).collect();
-
+                let buf: Vec<f32> = match reader.spec().sample_format {
+                    hound::SampleFormat::Float => reader
+                        .samples::<f32>()
+                        .map(|sample| {
+                            if let Err(err) = sample {
+                                logger::log(
+                                    format!("Error opening playback media: {}", err),
+                                    logger::LogContext::AudioSource,
+                                    logger::LogKind::Error,
+                                );
+                                return 0.0;
+                            }
+                            return sample.unwrap();
+                        })
+                        .collect(),
+                    hound::SampleFormat::Int => reader
+                        .samples::<i32>()
+                        .map(|sample| {
+                            if let Err(err) = sample {
+                                logger::log(
+                                    format!("Error opening playback media: {}", err),
+                                    logger::LogContext::AudioSource,
+                                    logger::LogKind::Error,
+                                );
+                                return 0.0;
+                            }
+                            return (sample.unwrap() as f32).div(32768.0);
+                        })
+                        .collect(),
+                };
+                // println!(
+                //     "Writing {} samples into clip {} ch {}",
+                //     buf.len(),
+                //     clip_idx,
+                //     channel_idx
+                // );
                 clips[incue_index].write(*clip_idx, buf);
             }
         }
     }
 }
-
+#[derive(Debug)]
 pub struct PlaybackDevice {
     pub channel_idx: usize,
     pub current_sample: i32,
@@ -181,6 +237,8 @@ impl AudioSource for PlaybackDevice {
         status: common::status::ProcessStatus,
     ) -> Result<&[f32], jack::Error> {
         let num_samples = _ps.n_frames();
+        //println!("{:?}", self);
+        //println!("status: {:?}", status);
         if status.running {
             for event in self
                 .cue
@@ -224,24 +282,39 @@ impl AudioSource for PlaybackDevice {
                 }
             }
 
-            if self.current_sample < 0
-                || self.current_sample as u32 + num_samples
-                    > self.clips[self.current_clip].get_length()
-            {
+            if self.current_sample < 0 {
                 return Ok(&[0.0f32; 96000][0..num_samples as usize]);
             }
-            let buf = self.clips[self.current_clip]
-                .read_buffer_slice(self.current_sample as u32, num_samples as usize);
-            self.current_sample += num_samples as i32;
-            return Ok(&buf[0..num_samples as usize]);
-        } else {
-            return Ok(&[0.0f32; 96000][0..num_samples as usize]);
+            if self.current_sample as u32 + num_samples > self.clips[self.current_clip].get_length()
+            {
+                self.active = false;
+                return Ok(&[0.0f32; 96000][0..num_samples as usize]);
+            }
+            if self.active {
+                let buf = self.clips[self.current_clip]
+                    .read_buffer_slice(self.current_sample as u32, num_samples as usize);
+                self.current_sample += num_samples as i32;
+                return Ok(&buf[0..num_samples as usize]);
+            }
         }
+        return Ok(&[0.0f32; 96000][0..num_samples as usize]);
     }
     fn command(
         &mut self,
         command: common::command::ControlCommand,
     ) -> Result<(), common::command::CommandError> {
+        match command {
+            ControlCommand::LoadCue(cue) => {
+                self.cue = cue;
+            }
+            ControlCommand::TransportStop => {
+                self.active = false;
+            }
+            ControlCommand::TransportZero => {
+                self.active = false;
+            }
+            _ => {}
+        }
         Ok(())
     }
 

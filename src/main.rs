@@ -16,6 +16,7 @@ use common::{
     show::Show,
 };
 
+use crate::playback::PlaybackHandler;
 use clap::Parser;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use metronome::Metronome;
@@ -82,8 +83,12 @@ fn main() {
             return;
         }
         common::config::BootProgramOrder::Run => {
-            let config = boot::get_config(config_path).unwrap();
-            let sources = vec![
+            let config = boot::get_config(config_path.clone()).unwrap();
+
+            let mut pbh = PlaybackHandler::new(config_path.clone());
+            pbh.load_show(config.show.clone().expect("no show found"), 1);
+
+            let mut sources = vec![
                 audio::source::SourceConfig {
                     name: "metronome".to_string(),
                     source_device: Box::new(Metronome::new()),
@@ -93,6 +98,8 @@ fn main() {
                     source_device: Box::new(TimecodeSource::new(25)),
                 },
             ];
+            sources.extend(pbh.create_audio_sources());
+
             let (cmd_tx, cmd_rx): (Sender<ControlCommand>, Receiver<ControlCommand>) = unbounded();
             let (status_tx, status_rx): (Sender<StatusMessageKind>, Receiver<StatusMessageKind>) =
                 unbounded();
@@ -104,7 +111,9 @@ fn main() {
                 status_tx,
             );
 
+            pbh.load_cue(config.show.clone().unwrap().cues[0].clone());
             let _ = cmd_tx.send(ControlCommand::LoadShow(config.show.unwrap()));
+            let _ = cmd_tx.send(ControlCommand::LoadCueByIndex(0));
             let _ = cmd_tx.send(ControlCommand::TransportZero);
 
             let mut nh = NetworkHandler::new("8081", cmd_tx.clone());
@@ -117,6 +126,10 @@ fn main() {
                 let control_message = nh.tick();
                 match control_message {
                     Some(msg) => match msg {
+                        ControlMessageKind::ControlCommand(ControlCommand::LoadCue(cue)) => {
+                            pbh.load_cue(cue.clone());
+                            let _ = cmd_tx.send(ControlCommand::LoadCue(cue));
+                        }
                         ControlMessageKind::ControlCommand(cmd) => {
                             let _ = cmd_tx.send(cmd);
                         }
