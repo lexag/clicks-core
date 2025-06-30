@@ -156,6 +156,13 @@ impl ProcessHandler for AudioProcessor {
             source_statuses.push(status);
         }
 
+        if self.status.process_status.next_beat_idx >= self.status.cue.get_beats().len() {
+            self.status.process_status.running = false;
+            self.tx_loopback.try_send(ControlCommand::TransportStop);
+            self.tx_loopback.try_send(ControlCommand::LoadNextCue);
+            self.tx_loopback.try_send(ControlCommand::TransportZero);
+        }
+
         self.status.process_status.sources = source_statuses;
         // Get audio frame buffers from all children and play in correct port
         for i in 0..self.sources.len() {
