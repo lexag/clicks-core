@@ -104,10 +104,20 @@ impl audio::source::AudioSource for Metronome {
             let t_us = c.frames_to_time(c.frame_time());
             let next_schd_t_us: u64 = self.last_beat_time + (next_beat.length * 1000) as u64;
 
+            //println!(
+            //    "t: {}, sch: {}, lb: {}",
+            //    t_us / 1000,
+            //    next_schd_t_us / 1000,
+            //    self.last_beat_time / 1000
+            //);
             if t_us > next_schd_t_us {
                 self.beat_idx = self.next_beat_idx;
                 self.next_beat_idx += 1;
-                self.last_beat_time = t_us;
+                if self.last_beat_time < t_us / 2 {
+                    self.last_beat_time = t_us;
+                } else {
+                    self.last_beat_time = next_schd_t_us;
+                }
                 let beat = self.cue.get_beat(self.beat_idx).unwrap();
                 for event in beat.events {
                     self.handle_event(event);
