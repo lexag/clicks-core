@@ -63,7 +63,6 @@ impl ProcessHandler for AudioProcessor {
 
                         ControlCommand::LoadShow(show) => {
                             self.status.show = show;
-
                             let _ = self.tx_loopback.try_send(ControlCommand::LoadCueByIndex(0));
                         }
 
@@ -156,7 +155,9 @@ impl ProcessHandler for AudioProcessor {
             source_statuses.push(status);
         }
 
-        if self.status.process_status.next_beat_idx >= self.status.cue.get_beats().len() {
+        if self.status.process_status.next_beat_idx >= self.status.cue.get_beats().len()
+            && self.status.process_status.running
+        {
             self.status.process_status.running = false;
             self.tx_loopback.try_send(ControlCommand::TransportStop);
             self.tx_loopback.try_send(ControlCommand::LoadNextCue);
@@ -182,7 +183,9 @@ impl ProcessHandler for AudioProcessor {
             }
         }
 
-        self.status.process_status.system_time = chrono::prelude::Utc::now().time().to_string();
+        self.status.process_status.system_time_us =
+            chrono::prelude::Utc::now().timestamp_micros() as u64;
+
         let _ = self.tx.try_send(StatusMessageKind::ProcessStatus(Some(
             self.status.process_status.clone(),
         )));

@@ -1,4 +1,4 @@
-#![allow(warnings)]
+#![warn(clippy::all, rust_2018_idioms)]
 
 mod audio;
 mod boot;
@@ -11,6 +11,7 @@ mod timecode;
 use common::{
     self,
     command::ControlCommand,
+    config::BootProgramOrder,
     cue::Cue,
     network::{ControlMessageKind, JACKStatus, StatusMessageKind},
     show::Show,
@@ -54,9 +55,9 @@ fn main() {
     };
 
     let boot_order = match args.manual_boot {
-        'c' => common::config::BootProgramOrder::WriteConfig,
-        'u' => common::config::BootProgramOrder::Upgrade,
-        'l' => common::config::BootProgramOrder::ExtractLogs,
+        'c' => BootProgramOrder::WriteConfig,
+        'u' => BootProgramOrder::Upgrade,
+        'l' => BootProgramOrder::ExtractLogs,
         _ => match boot::get_config(config_path.clone()) {
             Ok(val) => val.boot_order,
             Err(err) => {
@@ -67,22 +68,22 @@ fn main() {
     };
 
     match boot_order {
-        common::config::BootProgramOrder::WriteConfig => {
+        BootProgramOrder::WriteConfig => {
             if let Err(err) = boot::write_default_config(config_path.clone()) {
                 boot::log_boot_error(err);
             }
             return;
         }
-        common::config::BootProgramOrder::Upgrade => {
+        BootProgramOrder::Upgrade => {
             todo!("Bootstrapping updates is not yet implemented.")
         }
-        common::config::BootProgramOrder::ExtractLogs => {
+        BootProgramOrder::ExtractLogs => {
             if let Err(err) = boot::copy_logs(config_path.clone()) {
                 boot::log_boot_error(err);
             }
             return;
         }
-        common::config::BootProgramOrder::Run => {
+        BootProgramOrder::Run => {
             let config = boot::get_config(config_path.clone()).unwrap();
 
             let mut pbh = PlaybackHandler::new(config_path.clone());
@@ -119,6 +120,7 @@ fn main() {
             let mut nh = NetworkHandler::new("8081", cmd_tx.clone());
             nh.start();
 
+            let mut status_counter: u8 = 0;
             loop {
                 // Get a possible ControlMessageKind from network handler
                 // and decide how to handle it. Network handler has already handled and consumed
@@ -164,9 +166,18 @@ fn main() {
                 // and send it to network handler to broadcast.
                 match status_rx.try_recv() {
                     Ok(msg) => {
-                        nh.send_to_all(msg.clone());
+                        status_counter += 1;
                         match msg {
-                            _ => {}
+                            StatusMessageKind::ProcessStatus(status) => {
+                                if status.clone().unwrap_or_default().running || status_counter > 32
+                                {
+                                    nh.send_to_all(StatusMessageKind::ProcessStatus(status));
+                                    status_counter = 0;
+                                }
+                            }
+                            _ => {
+                                nh.send_to_all(msg.clone());
+                            }
                         }
                     }
 
