@@ -90,14 +90,14 @@ fn main() {
             pbh.load_show(config.show.clone().expect("no show found"), 1);
 
             let mut sources = vec![
-                audio::source::SourceConfig {
-                    name: "metronome".to_string(),
-                    source_device: Box::new(Metronome::new()),
-                },
-                audio::source::SourceConfig {
-                    name: "timecode".to_string(),
-                    source_device: Box::new(TimecodeSource::new(25)),
-                },
+                audio::source::SourceConfig::new(
+                    "metronome".to_string(),
+                    Box::new(Metronome::new()),
+                ),
+                audio::source::SourceConfig::new(
+                    "timecode".to_string(),
+                    Box::new(TimecodeSource::new(25)),
+                ),
             ];
             sources.extend(pbh.create_audio_sources());
 

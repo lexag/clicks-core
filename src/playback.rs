@@ -125,10 +125,10 @@ impl PlaybackHandler {
                     local_buffer: [0.0f32; LOCAL_BUF_SIZE],
                 });
             }
-            devices.push(SourceConfig {
-                name: format!("playback_{channel_idx}"),
-                source_device: Box::new(device),
-            });
+            devices.push(SourceConfig::new(
+                format!("playback_{channel_idx}"),
+                Box::new(device),
+            ));
         }
         return devices;
     }

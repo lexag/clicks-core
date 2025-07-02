@@ -9,7 +9,7 @@ use crate::{audio::source::SourceConfig, logger};
 use common::{
     command::ControlCommand,
     network::{JACKStatus, StatusMessageKind},
-    status::{AudioSourceStatus, CombinedStatus},
+    status::{AudioSourceStatus, CombinedStatus, ProcessStatus},
 };
 
 pub struct AudioProcessor {
@@ -36,6 +36,10 @@ impl AudioProcessor {
             tx_loopback,
             rx,
             status: CombinedStatus {
+                process_status: ProcessStatus {
+                    gains: vec![0.0f32; 64],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         }
@@ -115,6 +119,10 @@ impl ProcessHandler for AudioProcessor {
                             )));
                         }
 
+                        ControlCommand::SetChannelGain(channel_idx, gain) => {
+                            self.sources[channel_idx].set_gain(gain);
+                        }
+
                         _ => {}
                     }
 
@@ -139,7 +147,8 @@ impl ProcessHandler for AudioProcessor {
 
         // Get status from all sources and compile onto self.status
         let mut source_statuses: Vec<AudioSourceStatus> = vec![]; // stati??
-        for source in &mut self.sources {
+        for (i, source) in &mut self.sources.iter_mut().enumerate() {
+            self.status.process_status.gains[i] = source.get_gain();
             let status = source.source_device.get_status(c, ps);
             match status {
                 AudioSourceStatus::BeatStatus(ref status) => {
@@ -172,7 +181,11 @@ impl ProcessHandler for AudioProcessor {
                 .source_device
                 .send_buffer(c, ps, self.status.process_status.clone());
             if let Ok(buf) = res {
-                self.ports.0[i].as_mut_slice(ps).clone_from_slice(buf);
+                let mut out_buf = self.ports.0[i].as_mut_slice(ps);
+                out_buf.clone_from_slice(buf);
+                for i in 0..out_buf.len() {
+                    out_buf[i] *= source.get_gain_mult().clone();
+                }
             } else {
                 logger::log(
                     format!("Audio error occured in source {}.", i),
@@ -185,6 +198,7 @@ impl ProcessHandler for AudioProcessor {
 
         self.status.process_status.system_time_us =
             chrono::prelude::Utc::now().timestamp_micros() as u64;
+        self.status.process_status.cpu_use = c.cpu_load();
 
         let _ = self.tx.try_send(StatusMessageKind::ProcessStatus(Some(
             self.status.process_status.clone(),
