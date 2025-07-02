@@ -3,7 +3,7 @@ use crate::audio;
 use common::{
     command::{CommandError, ControlCommand},
     cue::{Beat, BeatEvent, Cue},
-    status::{AudioSourceStatus, ProcessStatus, TimeStatus, TimecodeInstant},
+    status::{AudioSourceStatus, CombinedStatus, ProcessStatus, TimeStatus, TimecodeInstant},
 };
 
 pub struct TimecodeSource {
@@ -16,27 +16,22 @@ pub struct TimecodeSource {
     frame_buffer: [f32; 8192],
     cue: Cue,
     current_time: TimecodeInstant,
+    status: ProcessStatus,
 }
 
 impl Default for TimecodeSource {
     fn default() -> Self {
-        TimecodeSource {
+        Self {
             active: false,
             frame_rate: 25,
-            volume: 0.31,
             drop_frame: false,
-            external_clock: false,
             color_framing: false,
-            frame_buffer: [0f32; 8192],
+            external_clock: false,
+            volume: 1.0,
+            frame_buffer: [0.0f32; 8192],
             cue: Cue::empty(),
-            current_time: TimecodeInstant {
-                frame_rate: 25,
-                h: 0,
-                m: 0,
-                s: 0,
-                f: 0,
-                frame_progress: 0,
-            },
+            current_time: TimecodeInstant::new(25),
+            status: ProcessStatus::default(),
         }
     }
 }
@@ -130,6 +125,33 @@ impl TimecodeSource {
         return buf;
     }
 
+    fn calculate_time_at_beat(&self, beat_idx: usize) -> TimecodeInstant {
+        let mut time = TimecodeInstant {
+            h: 0,
+            m: 0,
+            s: 0,
+            f: 0,
+            frame_progress: 0,
+            frame_rate: self.frame_rate,
+        };
+        let mut time_off_us = 0_u64;
+        for i in 0..beat_idx {
+            println!("{:?} looking to index {}", self.cue, beat_idx);
+            for event in self.cue.get_beat(i).unwrap().events {
+                match event {
+                    BeatEvent::TimecodeEvent { h, m, s, f } => {
+                        time.set_time(h, m, s, f);
+                        time_off_us = 0;
+                    }
+                    _ => {}
+                }
+            }
+            time_off_us += (self.cue.get_beat(i).unwrap().length * 1000) as u64;
+        }
+        time.add_us(time_off_us);
+        return time;
+    }
+
     //fn extract_time_status(&self, t_us: u128) -> AudioSourceStatus {
     //    let h: usize = ((t_us >> 16) / 3600).try_into().unwrap();
     //    let m: usize = ((t_us >> 16) / 60 % 60).try_into().unwrap();
@@ -144,29 +166,23 @@ impl TimecodeSource {
 impl audio::source::AudioSource for TimecodeSource {
     fn get_status(&mut self, _c: &jack::Client, _ps: &jack::ProcessScope) -> AudioSourceStatus {
         return AudioSourceStatus::TimeStatus(TimeStatus {
-            h: self.current_time.h,
-            m: self.current_time.m,
-            s: self.current_time.s,
-            f: self.current_time.f,
+            h: self.current_time.h as usize,
+            m: self.current_time.m as usize,
+            s: self.current_time.s as usize,
+            f: self.current_time.f as usize,
             fp: self.current_time.frame_progress as usize,
         });
     }
     fn command(&mut self, command: ControlCommand) -> Result<(), CommandError> {
         match command {
             ControlCommand::TransportZero => {
-                self.current_time.h = 0;
-                self.current_time.m = 0;
-                self.current_time.s = 0;
-                self.current_time.f = 0;
+                self.current_time.set_time(0, 0, 0, 0);
                 self.current_time.frame_progress = 0;
 
                 for event in self.cue.get_beat(0).unwrap_or_default().events {
                     match event {
                         BeatEvent::TimecodeEvent { h, m, s, f } => {
-                            self.current_time.h = h;
-                            self.current_time.m = m;
-                            self.current_time.s = s;
-                            self.current_time.f = f;
+                            self.current_time.set_time(h, m, s, f);
                             self.active = true;
                         }
                         _ => {}
@@ -179,6 +195,14 @@ impl audio::source::AudioSource for TimecodeSource {
             ControlCommand::TransportStart => {
                 self.active = true;
             }
+            ControlCommand::TransportJumpBeat(beat_idx) => {
+                self.current_time = self.calculate_time_at_beat(beat_idx);
+            }
+            ControlCommand::TransportSeekBeat(beat_idx) => {
+                self.current_time = self.calculate_time_at_beat(beat_idx);
+                self.current_time.sub_us(self.status.us_to_next_beat as u64)
+            }
+            ControlCommand::LoadCue(cue) => self.cue = cue.clone(),
             _ => {}
         }
         return Ok(());
@@ -192,6 +216,7 @@ impl audio::source::AudioSource for TimecodeSource {
     ) -> Result<&[f32], jack::Error> {
         let sample_rate = _c.sample_rate() as u32;
         let last_cycle_frame = self.current_time.clone();
+        self.status = status.clone();
 
         if self.active {
             self.current_time.add_progress(
@@ -218,10 +243,10 @@ impl audio::source::AudioSource for TimecodeSource {
                         self.active = true;
                         self.current_time = TimecodeInstant {
                             frame_rate: self.frame_rate,
-                            h,
-                            m,
-                            s,
-                            f,
+                            h: h as i16,
+                            m: m as i16,
+                            s: s as i16,
+                            f: f as i16,
                             frame_progress: 0,
                         };
                     }

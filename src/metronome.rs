@@ -20,6 +20,7 @@ pub struct Metronome {
     cue: Cue,
     beat_idx: usize,
     next_beat_idx: usize,
+    status: ProcessStatus,
 }
 
 impl Default for Metronome {
@@ -40,6 +41,7 @@ impl Default for Metronome {
             click_buffers: [[0f32; 96000]; 2],
             beat_idx: 0,
             next_beat_idx: 1,
+            status: ProcessStatus::default(),
         }
     }
 }
@@ -99,6 +101,7 @@ impl audio::source::AudioSource for Metronome {
         ps: &ProcessScope,
         status: ProcessStatus,
     ) -> Result<&[f32], jack::Error> {
+        self.status = status.clone();
         if status.running {
             let res = self.cue.get_beat(self.next_beat_idx);
             if let Err(err) = res {
@@ -117,7 +120,7 @@ impl audio::source::AudioSource for Metronome {
             if t_us > next_schd_t_us {
                 self.beat_idx = self.next_beat_idx;
                 self.next_beat_idx += 1;
-                if self.last_beat_time < t_us / 2 {
+                if self.last_beat_time == 0 {
                     self.last_beat_time = t_us;
                 } else {
                     self.last_beat_time = next_schd_t_us;
@@ -143,6 +146,16 @@ impl audio::source::AudioSource for Metronome {
             ControlCommand::TransportZero => {
                 self.beat_idx = usize::MAX;
                 self.next_beat_idx = 0;
+                self.last_beat_time = 0;
+            }
+            ControlCommand::TransportStop => {
+                self.last_beat_time = 0;
+            }
+            ControlCommand::TransportSeekBeat(beat_idx) => {
+                self.next_beat_idx = beat_idx;
+            }
+            ControlCommand::TransportJumpBeat(beat_idx) => {
+                self.next_beat_idx = beat_idx;
                 self.last_beat_time = 0;
             }
             _ => {}
