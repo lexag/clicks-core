@@ -136,7 +136,6 @@ impl TimecodeSource {
         };
         let mut time_off_us = 0_u64;
         for i in 0..beat_idx {
-            println!("{:?} looking to index {}", self.cue, beat_idx);
             for event in self.cue.get_beat(i).unwrap().events {
                 match event {
                     BeatEvent::TimecodeEvent { h, m, s, f } => {

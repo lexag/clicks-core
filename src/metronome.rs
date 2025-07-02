@@ -88,7 +88,7 @@ impl audio::source::AudioSource for Metronome {
         return AudioSourceStatus::BeatStatus(BeatStatus {
             beat_idx: self.beat_idx,
             next_beat_idx: self.next_beat_idx,
-            us_to_next: if next_schd_t_us > t_us {
+            us_to_next: if next_schd_t_us > t_us && next_schd_t_us < u64::MAX / 2 {
                 (next_schd_t_us - t_us) as usize
             } else {
                 0
