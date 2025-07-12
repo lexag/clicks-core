@@ -1,6 +1,6 @@
 use std::net::UdpSocket;
 
-use crate::logger;
+use crate::{logger, CrossbeamNetwork};
 use chrono::{DateTime, Utc};
 use common::{
     command::ControlCommand,
@@ -11,15 +11,13 @@ use jack::Control;
 
 pub struct NetworkHandler {
     socket: UdpSocket,
-    cmd_tx: Sender<ControlCommand>,
     subscribers: Vec<SubscriberInfo>,
 }
 
 impl NetworkHandler {
-    pub fn new(port: &str, cmd_tx: Sender<ControlCommand>) -> NetworkHandler {
+    pub fn new(port: &str) -> NetworkHandler {
         let nh = NetworkHandler {
             subscribers: vec![],
-            cmd_tx,
             socket: UdpSocket::bind(format!("192.168.1.125:{port}"))
                 .expect("couldn't open local port"),
         };

@@ -1,11 +1,11 @@
 use crate::logger;
-use common::config::{BootConfig, BootProgramOrder};
+use common::config::{BootProgramOrder, SystemConfiguration};
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]
 pub enum BootError {
-    ConfigFindFailure(String),
-    ConfigDoesNotExist,
+    ShowFindFailure(String),
+    ShowDoesNotExist,
     BootProgramOrderFailure(String),
     ConfigWriteError(String),
     LogCopyFailure(String),
@@ -14,12 +14,12 @@ pub enum BootError {
 impl Display for BootError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            BootError::ConfigDoesNotExist => {
-                write!(f, "Could not find clicks config data. No results. Exiting.")
+            BootError::ShowDoesNotExist => {
+                write!(f, "Could not find clicks show data. No results. Exiting.")
             }
-            BootError::ConfigFindFailure(errstr) => write!(
+            BootError::ShowFindFailure(errstr) => write!(
                 f,
-                "Could not find clicks config data. Unknown error: {errstr}"
+                "Could not find clicks show data. Unknown error: {errstr}"
             ),
             BootError::BootProgramOrderFailure(errstr) => write!(
                 f,
@@ -43,7 +43,7 @@ pub fn log_boot_error(err: BootError) {
     );
 }
 
-pub fn find_config_path() -> Result<PathBuf, BootError> {
+pub fn find_show_path() -> Result<PathBuf, BootError> {
     let data_path = match std::process::Command::new("find")
         .arg("/")
         .arg("-name")
@@ -51,7 +51,7 @@ pub fn find_config_path() -> Result<PathBuf, BootError> {
         .output()
     {
         Err(err) => {
-            return Err(BootError::ConfigFindFailure(format!("{err}")));
+            return Err(BootError::ShowFindFailure(format!("{err}")));
         }
         Ok(res) => {
             logger::log(
@@ -66,7 +66,7 @@ pub fn find_config_path() -> Result<PathBuf, BootError> {
             let path = results.split('\n').nth(0).unwrap_or_default().trim();
 
             if path.len() == 0 {
-                return Err(BootError::ConfigDoesNotExist);
+                return Err(BootError::ShowDoesNotExist);
             } else {
                 return Ok(PathBuf::from_str(path).unwrap());
             }
@@ -74,14 +74,23 @@ pub fn find_config_path() -> Result<PathBuf, BootError> {
     };
 }
 
-pub fn get_config(path: PathBuf) -> Result<BootConfig, BootError> {
-    match serde_json::from_str::<BootConfig>(
-        std::str::from_utf8(
-            &std::fs::read(path.join(PathBuf::from_str("config.json").unwrap())).unwrap(),
-        )
-        .unwrap(),
+pub fn get_config_path() -> PathBuf {
+    return PathBuf::from_str("~/.config/clicks/clicks.conf")
+        .expect("Config file path conversion failed.");
+}
+
+pub fn get_config() -> Result<SystemConfiguration, BootError> {
+    if !std::fs::exists(get_config_path()).unwrap_or_default() {
+        std::fs::create_dir_all(get_config_path().parent().unwrap());
+        std::fs::write(
+            get_config_path(),
+            serde_json::to_string_pretty(&SystemConfiguration::default()).unwrap(),
+        );
+    }
+    match serde_json::from_str::<SystemConfiguration>(
+        std::str::from_utf8(&std::fs::read(get_config_path()).unwrap()).unwrap(),
     ) {
-        Ok(order) => Ok(order),
+        Ok(config) => Ok(config),
         Err(err) => Err(BootError::BootProgramOrderFailure(err.to_string())),
     }
 }
@@ -94,7 +103,7 @@ pub fn write_default_config(path: PathBuf) -> Result<(), BootError> {
     );
     match std::fs::write(
         path.join("config.json"),
-        serde_json::to_string_pretty(&common::config::BootConfig::default()).unwrap(),
+        serde_json::to_string_pretty(&common::config::SystemConfiguration::default()).unwrap(),
     ) {
         Ok(_) => return Ok(()),
         Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),

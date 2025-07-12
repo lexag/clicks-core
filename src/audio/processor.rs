@@ -4,7 +4,7 @@ use jack::{
     ProcessScope, Unowned,
 };
 
-use crate::{audio::source::SourceConfig, logger};
+use crate::{audio::source::SourceConfig, logger, CrossbeamNetwork};
 
 use common::{
     command::ControlCommand,
@@ -14,9 +14,7 @@ use common::{
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
-    tx: Sender<StatusMessageKind>,
-    tx_loopback: Sender<ControlCommand>,
-    rx: Receiver<ControlCommand>,
+    cbnet: CrossbeamNetwork,
     status: CombinedStatus,
     ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
 }
@@ -25,16 +23,12 @@ impl AudioProcessor {
     pub fn new(
         sources: Vec<SourceConfig>,
         ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
-        rx: Receiver<ControlCommand>,
-        tx_loopback: Sender<ControlCommand>,
-        tx: Sender<StatusMessageKind>,
+        cbnet: CrossbeamNetwork,
     ) -> AudioProcessor {
         AudioProcessor {
             ports,
             sources,
-            tx,
-            tx_loopback,
-            rx,
+            cbnet,
             status: CombinedStatus {
                 process_status: ProcessStatus {
                     gains: vec![0.0f32; 64],
@@ -50,7 +44,7 @@ impl ProcessHandler for AudioProcessor {
     fn process(&mut self, c: &Client, ps: &ProcessScope) -> Control {
         // Handle channel commands
         loop {
-            match self.rx.try_recv() {
+            match self.cbnet.cmd_rx.try_recv() {
                 Ok(cmd) => {
                     logger::log(
                         format!("ControlCommand: {cmd}"),
@@ -67,21 +61,27 @@ impl ProcessHandler for AudioProcessor {
 
                         ControlCommand::LoadShow(show) => {
                             self.status.show = show;
-                            let _ = self.tx_loopback.try_send(ControlCommand::LoadCueByIndex(0));
+                            let _ = self
+                                .cbnet
+                                .cmd_tx
+                                .try_send(ControlCommand::LoadCueByIndex(0));
                         }
 
                         ControlCommand::LoadCue(cue) => {
                             self.status.process_status.running = false;
                             self.status.cue = cue.clone();
 
-                            let _ = self.tx_loopback.try_send(ControlCommand::TransportStop);
-                            let _ = self.tx_loopback.try_send(ControlCommand::TransportZero);
-                            let _ = self.tx.try_send(StatusMessageKind::CueStatus(Some(
-                                self.status.cue.clone(),
-                            )));
+                            let _ = self.cbnet.cmd_tx.try_send(ControlCommand::TransportStop);
+                            let _ = self.cbnet.cmd_tx.try_send(ControlCommand::TransportZero);
+                            let _ =
+                                self.cbnet
+                                    .status_tx
+                                    .try_send(StatusMessageKind::CueStatus(Some(
+                                        self.status.cue.clone(),
+                                    )));
                         }
                         ControlCommand::LoadCueFromSelfIndex => {
-                            let _ = self.tx_loopback.try_send(ControlCommand::LoadCue(
+                            let _ = self.cbnet.cmd_tx.try_send(ControlCommand::LoadCue(
                                 self.status.show.cues[self.status.process_status.cue_idx].clone(),
                             ));
                         }
@@ -89,7 +89,8 @@ impl ProcessHandler for AudioProcessor {
                             if idx < self.status.show.cues.len() {
                                 self.status.process_status.cue_idx = idx;
                                 let _ = self
-                                    .tx_loopback
+                                    .cbnet
+                                    .cmd_tx
                                     .try_send(ControlCommand::LoadCueFromSelfIndex);
                             }
                         }
@@ -97,7 +98,8 @@ impl ProcessHandler for AudioProcessor {
                             if self.status.process_status.cue_idx > 0 {
                                 self.status.process_status.cue_idx += 1;
                                 let _ = self
-                                    .tx_loopback
+                                    .cbnet
+                                    .cmd_tx
                                     .try_send(ControlCommand::LoadCueFromSelfIndex);
                             }
                         }
@@ -106,17 +108,24 @@ impl ProcessHandler for AudioProcessor {
                             {
                                 self.status.process_status.cue_idx += 1;
                                 let _ = self
-                                    .tx_loopback
+                                    .cbnet
+                                    .cmd_tx
                                     .try_send(ControlCommand::LoadCueFromSelfIndex);
                             }
                         }
                         ControlCommand::DumpStatus => {
-                            let _ = self.tx.try_send(StatusMessageKind::CueStatus(Some(
-                                self.status.cue.clone(),
-                            )));
-                            let _ = self.tx.try_send(StatusMessageKind::ShowStatus(Some(
-                                self.status.show.lightweight(),
-                            )));
+                            let _ =
+                                self.cbnet
+                                    .status_tx
+                                    .try_send(StatusMessageKind::CueStatus(Some(
+                                        self.status.cue.clone(),
+                                    )));
+                            let _ =
+                                self.cbnet
+                                    .status_tx
+                                    .try_send(StatusMessageKind::ShowStatus(Some(
+                                        self.status.show.lightweight(),
+                                    )));
                         }
 
                         ControlCommand::SetChannelGain(channel_idx, gain) => {
@@ -168,9 +177,9 @@ impl ProcessHandler for AudioProcessor {
             && self.status.process_status.running
         {
             self.status.process_status.running = false;
-            self.tx_loopback.try_send(ControlCommand::TransportStop);
-            self.tx_loopback.try_send(ControlCommand::LoadNextCue);
-            self.tx_loopback.try_send(ControlCommand::TransportZero);
+            self.cbnet.cmd_tx.try_send(ControlCommand::TransportStop);
+            self.cbnet.cmd_tx.try_send(ControlCommand::LoadNextCue);
+            self.cbnet.cmd_tx.try_send(ControlCommand::TransportZero);
         }
 
         self.status.process_status.sources = source_statuses;
@@ -200,9 +209,12 @@ impl ProcessHandler for AudioProcessor {
             chrono::prelude::Utc::now().timestamp_micros() as u64;
         self.status.process_status.cpu_use = c.cpu_load();
 
-        let _ = self.tx.try_send(StatusMessageKind::ProcessStatus(Some(
-            self.status.process_status.clone(),
-        )));
+        let _ = self
+            .cbnet
+            .status_tx
+            .try_send(StatusMessageKind::ProcessStatus(Some(
+                self.status.process_status.clone(),
+            )));
 
         return Control::Continue;
     }
