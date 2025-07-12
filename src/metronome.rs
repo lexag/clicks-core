@@ -103,13 +103,14 @@ impl audio::source::AudioSource for Metronome {
     ) -> Result<&[f32], jack::Error> {
         self.status = status.clone();
         if status.running {
+            let mut beat = self.cue.get_beat(self.beat_idx).unwrap_or_default();
             let res = self.cue.get_beat(self.next_beat_idx);
             if let Err(err) = res {
                 return Ok(&[0f32; 2048][0..ps.n_frames() as usize]);
             }
             let next_beat = res.unwrap();
             let t_us = c.frames_to_time(c.frame_time());
-            let next_schd_t_us: u64 = self.last_beat_time + (next_beat.length * 1000) as u64;
+            let next_schd_t_us: u64 = self.last_beat_time + (beat.length * 1000) as u64;
 
             //println!(
             //    "t: {}, sch: {}, lb: {}",
@@ -119,13 +120,13 @@ impl audio::source::AudioSource for Metronome {
             //);
             if t_us > next_schd_t_us {
                 self.beat_idx = self.next_beat_idx;
+                beat = self.cue.get_beat(self.beat_idx).unwrap_or_default();
                 self.next_beat_idx += 1;
                 if self.last_beat_time == 0 {
                     self.last_beat_time = t_us;
                 } else {
                     self.last_beat_time = next_schd_t_us;
                 }
-                let beat = self.cue.get_beat(self.beat_idx).unwrap();
                 for event in beat.events {
                     self.handle_event(event);
                 }

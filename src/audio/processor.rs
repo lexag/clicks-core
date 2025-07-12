@@ -115,7 +115,7 @@ impl ProcessHandler for AudioProcessor {
                                 self.status.cue.clone(),
                             )));
                             let _ = self.tx.try_send(StatusMessageKind::ShowStatus(Some(
-                                self.status.show.clone(),
+                                self.status.show.lightweight(),
                             )));
                         }
 
