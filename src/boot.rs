@@ -75,7 +75,7 @@ pub fn find_show_path() -> Result<PathBuf, BootError> {
 }
 
 pub fn get_config_path() -> PathBuf {
-    return PathBuf::from_str("~/.config/clicks/clicks.conf")
+    return PathBuf::from_str(".config/clicks/clicks.conf")
         .expect("Config file path conversion failed.");
 }
 

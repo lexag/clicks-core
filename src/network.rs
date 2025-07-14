@@ -1,6 +1,6 @@
 use std::net::UdpSocket;
 
-use crate::{CrossbeamNetwork, logger};
+use crate::{logger, CrossbeamNetwork};
 use chrono::{DateTime, Utc};
 use common::{
     command::ControlCommand,
@@ -30,7 +30,7 @@ impl NetworkHandler {
     }
 
     pub fn tick(&mut self) -> Option<ControlMessageKind> {
-        let mut buf = [0; 1024];
+        let mut buf = [0; 1024 * 64];
         match self.socket.recv_from(&mut buf) {
             Ok((amt, src)) => {
                 for subscriber in &mut self.subscribers {
