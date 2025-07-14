@@ -104,10 +104,10 @@ impl PlaybackHandler {
         for channel_idx in 0..self.num_channels {
             let max_clips_in_channel: usize =
                 *(max_clips_per_cue_per_channel.get(&channel_idx).unwrap());
+            if !self.clips.contains_key(&channel_idx) {
+                self.clips.insert(channel_idx, vec![]);
+            }
             for clip_idx in 0..max_clips_in_channel {
-                if !self.clips.contains_key(&channel_idx) {
-                    self.clips.insert(channel_idx, vec![]);
-                }
                 self.clips
                     .get_mut(&channel_idx)
                     .unwrap()
@@ -118,9 +118,9 @@ impl PlaybackHandler {
 
     pub fn create_audio_sources(&mut self) -> Vec<SourceConfig> {
         let mut devices = vec![];
-        for (channel_idx, clips) in &self.clips {
-            let mut device = PlaybackDevice::new(*channel_idx, self.show_path.clone());
-            for clip in clips {
+        for channel_idx in 0..self.num_channels {
+            let mut device = PlaybackDevice::new(channel_idx, self.show_path.clone());
+            for clip in self.clips.get(&channel_idx).unwrap() {
                 device.clips.push(AudioClip {
                     clip_idx: Arc::clone(&clip.clip_idx),
                     buffer: Arc::clone(&clip.buffer),

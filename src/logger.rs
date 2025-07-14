@@ -1,38 +1,10 @@
+pub use common::config::{LogContext, LogKind};
 use std::{
     fmt::{Debug, Display},
     io::Write,
     path::PathBuf,
     str::FromStr,
 };
-
-pub enum LogKind {
-    Error,
-    Warning,
-    Note,
-    Command,
-    Debug,
-}
-
-pub enum LogContext {
-    Logger,
-    Network,
-    AudioProcessor,
-    AudioSource,
-    AudioHandler,
-    Boot,
-}
-
-impl Display for LogKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            LogKind::Error => write!(f, "ERROR"),
-            LogKind::Warning => write!(f, "WARNING"),
-            LogKind::Note => write!(f, "NOTE"),
-            LogKind::Command => write!(f, "COMMAND"),
-            LogKind::Debug => write!(f, "DEBUG"),
-        }
-    }
-}
 
 const LOG_PATH_STR: &str = "logs";
 
@@ -88,7 +60,6 @@ pub fn init() {
 }
 
 pub fn log(msg: String, context: LogContext, kind: LogKind) {
-    let LOG_PATH = PathBuf::from_str(LOG_PATH_STR).unwrap();
     let systime = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

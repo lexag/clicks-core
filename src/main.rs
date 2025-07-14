@@ -76,6 +76,15 @@ fn main() {
         }
     };
 
+    // FIXME: ugly way to make sure that jackd is dead after last debug run
+    // should not need to exist in normal operation, because power cycle will reset jackd anyway,
+    // and that is the only in-use way to rerun the program
+    let _ = std::process::Command::new("killall")
+        .arg("jackd")
+        .spawn()
+        .unwrap()
+        .wait();
+
     let mut config = boot::get_config().unwrap();
     let show = Show::from_file(show_path.join("show.json")).unwrap();
 
@@ -105,14 +114,15 @@ fn main() {
                 }
                 ControlMessageKind::RoutingChangeRequest(a, b, connect) => {
                     ah.try_route_ports(a, b, connect);
-                    nh.send_to_all(StatusMessageKind::JACKStatus(ah.get_jack_status()));
+                    nh.send_to_all(StatusMessageKind::JACKStatus(Some(ah.get_jack_status())));
                 }
                 ControlMessageKind::NotifySubscribers => {
                     let _ = cbnet.cmd_tx.send(ControlCommand::DumpStatus);
-                    nh.send_to_all(StatusMessageKind::JACKStatus(ah.get_jack_status()));
+                    nh.send_to_all(StatusMessageKind::JACKStatus(Some(ah.get_jack_status())));
                     nh.send_to_all(StatusMessageKind::ConfigurationStatus(Some(config.clone())));
                 }
                 ControlMessageKind::Shutdown => {
+                    boot::write_config(config);
                     logger::log(
                         format!("Shutdown. Goodnight.",),
                         logger::LogContext::Boot,
@@ -134,10 +144,16 @@ fn main() {
                             Box::new(TimecodeSource::new(25)),
                         ),
                     ];
+                    pbh.load_show(show.clone());
                     sources.extend(pbh.create_audio_sources());
+                    println!("{:?}", sources);
 
                     ah.configure(config.audio.clone());
                     ah.start(sources);
+                    nh.send_to_all(StatusMessageKind::JACKStatus(Some(ah.get_jack_status())));
+                    let _ = cbnet
+                        .cmd_tx
+                        .try_send(ControlCommand::LoadShow(show.clone()));
                 }
 
                 ControlMessageKind::SetConfigurationRequest(conf) => {

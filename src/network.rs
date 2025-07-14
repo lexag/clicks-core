@@ -96,6 +96,15 @@ impl NetworkHandler {
     }
 
     pub fn send_to_all(&mut self, msg: StatusMessageKind) {
+        if std::mem::discriminant(&msg)
+            != std::mem::discriminant(&StatusMessageKind::ProcessStatus(None))
+        {
+            logger::log(
+                format!("Sending network message: {msg:?}"),
+                logger::LogContext::Network,
+                logger::LogKind::Debug,
+            );
+        }
         self.subscribers = self
             .subscribers
             .clone()

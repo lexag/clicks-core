@@ -2,14 +2,13 @@ use std::sync::Weak;
 
 use crate::{
     audio::{
-        config::AudioConfig, notification::JACKNotificationHandler, processor::AudioProcessor,
-        source::SourceConfig,
+        notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
     logger, CrossbeamNetwork,
 };
 use common::{
     config::AudioConfiguration,
-    network::{JACKStatus, StatusMessageKind},
+    network::{AudioDevice, JACKStatus, StatusMessageKind},
 };
 use crossbeam_channel::{Receiver, Sender};
 use jack::{
@@ -25,11 +24,13 @@ pub struct AudioHandler {
     config: AudioConfiguration,
     jack_server_process: Option<std::process::Child>,
     cbnet: CrossbeamNetwork,
+    pub jack_status: JACKStatus,
 }
 
 impl AudioHandler {
     pub fn new(num_sources: usize, cbnet: CrossbeamNetwork) -> AudioHandler {
         AudioHandler {
+            jack_status: JACKStatus::default(),
             cbnet,
             client: None,
             num_sources,
@@ -58,6 +59,9 @@ impl AudioHandler {
     }
 
     fn get_ports(&self) -> (Vec<Port<Unowned>>, Vec<Port<Unowned>>) {
+        if self.client.is_none() {
+            return (vec![], vec![]);
+        }
         let mut ports: (Vec<Port<Unowned>>, Vec<Port<Unowned>>) = (vec![], vec![]);
         let client = self.client.as_ref().unwrap().as_client();
         let mut i_ports = client.ports(
@@ -91,6 +95,34 @@ impl AudioHandler {
             .collect();
 
         return ports;
+    }
+
+    pub fn get_connections(&self) -> Vec<(usize, usize)> {
+        let ports = self.get_ports();
+        return ports
+            .0
+            .iter()
+            .enumerate()
+            .map(|(a_idx, a_port)| {
+                ports
+                    .1
+                    .iter()
+                    .enumerate()
+                    .map(|(b_idx, b_port)| {
+                        if a_port
+                            .is_connected_to(&b_port.name().unwrap())
+                            .unwrap_or_default()
+                        {
+                            (a_idx, b_idx)
+                        } else {
+                            (usize::MAX, usize::MAX)
+                        }
+                    })
+                    .collect::<Vec<(usize, usize)>>()
+            })
+            .flatten()
+            .filter(|(a, b)| *a < usize::MAX && *b < usize::MAX)
+            .collect();
     }
 
     pub fn try_route_ports(&mut self, from: usize, to: usize, connect: bool) -> bool {
@@ -152,43 +184,21 @@ impl AudioHandler {
         return false;
     }
 
-    pub fn get_jack_status(&self) -> Option<JACKStatus> {
-        if self.client.is_none() {
-            return None;
+    pub fn get_jack_status(&mut self) -> JACKStatus {
+        self.jack_status.running = !self.client.is_none();
+        self.jack_status.available_devices = self.get_hw_devices();
+
+        if self.jack_status.running {
+            let client = self.client.as_ref().unwrap().as_client();
+            self.jack_status.io_size = (self.get_ports().0.len(), self.get_ports().1.len());
+            self.jack_status.buffer_size = client.buffer_size() as usize;
+            self.jack_status.sample_rate = client.sample_rate();
+            self.jack_status.frame_size = 0;
+            self.jack_status.client_name = client.name().to_string();
+            self.jack_status.output_name = self.config.server.system_name.clone();
+            self.jack_status.connections = self.get_connections();
         }
-        let ports = self.get_ports();
-        return Some(JACKStatus {
-            io_size: (self.num_sources, self.config.server.num_channels),
-            buffer_size: self.client.as_ref().unwrap().as_client().buffer_size() as usize,
-            sample_rate: self.client.as_ref().unwrap().as_client().sample_rate(),
-            frame_size: 0,
-            connections: ports
-                .0
-                .iter()
-                .enumerate()
-                .map(|(a_idx, a_port)| {
-                    ports
-                        .1
-                        .iter()
-                        .enumerate()
-                        .map(|(b_idx, b_port)| {
-                            if a_port
-                                .is_connected_to(&b_port.name().unwrap())
-                                .unwrap_or_default()
-                            {
-                                (a_idx, b_idx)
-                            } else {
-                                (usize::MAX, usize::MAX)
-                            }
-                        })
-                        .collect::<Vec<(usize, usize)>>()
-                })
-                .flatten()
-                .filter(|(a, b)| *a < usize::MAX && *b < usize::MAX)
-                .collect(),
-            client_name: self.config.client.name.clone(),
-            output_name: self.config.server.system_name.clone(),
-        });
+        return self.jack_status.clone();
     }
 
     pub fn shutdown(&mut self) {
@@ -203,7 +213,7 @@ impl AudioHandler {
             std::process::Command::new("jackd")
                 .arg("-R")
                 .args(["-d", "alsa"])
-                .args(["-d", &self.config.server.device_name])
+                .args(["-d", &self.config.server.device_id])
                 .args(["-r", &self.config.server.sample_rate.to_string()])
                 .spawn()
                 .unwrap(),
@@ -245,7 +255,6 @@ impl AudioHandler {
     }
 
     pub fn collect_system_ports(&self, client: &Client) -> Vec<Port<Unowned>> {
-        let client = self.client.as_ref().unwrap().as_client();
         let mut ports = client.ports(
             Some(&self.config.server.system_name),
             Some("32 bit float mono audio"),
@@ -267,19 +276,31 @@ impl AudioHandler {
             .collect();
     }
 
-    pub fn send_status(&self) {
-        let jack_status = JACKStatus {
-            io_size: (self.num_sources, self.config.server.num_channels),
-            sample_rate: self.client.as_ref().unwrap().as_client().sample_rate(),
-            buffer_size: self.client.as_ref().unwrap().as_client().buffer_size() as usize,
-            connections: vec![],
-            frame_size: 0,
-            client_name: self.config.client.name.clone(),
-            output_name: self.config.server.system_name.clone(),
-        };
+    pub fn send_status(&mut self) {
+        let status = self.get_jack_status();
         let _ = self
             .cbnet
             .status_tx
-            .try_send(StatusMessageKind::JACKStatus(Some(jack_status.clone())));
+            .try_send(StatusMessageKind::JACKStatus(Some(status)));
+    }
+
+    pub fn get_hw_devices(&self) -> Vec<AudioDevice> {
+        let output = std::process::Command::new("aplay")
+            .arg("--list-devices")
+            .output()
+            .expect("Failed to execute `aplay`");
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut devices = Vec::new();
+
+        for line in stdout.lines() {
+            if line.trim_start().starts_with("card") {
+                if let Some(device) = AudioDevice::from_aplay_str(line.to_string()) {
+                    devices.push(device);
+                }
+            }
+        }
+
+        devices
     }
 }

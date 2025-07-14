@@ -95,15 +95,30 @@ pub fn get_config() -> Result<SystemConfiguration, BootError> {
     }
 }
 
-pub fn write_default_config(path: PathBuf) -> Result<(), BootError> {
+pub fn write_default_config() -> Result<(), BootError> {
     logger::log(
         format!("Writing new config file and exiting.",),
         logger::LogContext::Boot,
         logger::LogKind::Note,
     );
     match std::fs::write(
-        path.join("config.json"),
+        get_config_path(),
         serde_json::to_string_pretty(&common::config::SystemConfiguration::default()).unwrap(),
+    ) {
+        Ok(_) => return Ok(()),
+        Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),
+    }
+}
+
+pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
+    logger::log(
+        format!("Saving configuration file...",),
+        logger::LogContext::Boot,
+        logger::LogKind::Note,
+    );
+    match std::fs::write(
+        get_config_path(),
+        serde_json::to_string_pretty(&config).unwrap(),
     ) {
         Ok(_) => return Ok(()),
         Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),
