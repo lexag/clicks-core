@@ -1,6 +1,6 @@
 use std::net::UdpSocket;
 
-use crate::{logger, CrossbeamNetwork};
+use crate::{CrossbeamNetwork, logger};
 use chrono::{DateTime, Utc};
 use common::{
     command::ControlCommand,

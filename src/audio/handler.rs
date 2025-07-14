@@ -1,10 +1,11 @@
 use std::sync::Weak;
 
 use crate::{
+    CrossbeamNetwork,
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
-    logger, CrossbeamNetwork,
+    logger,
 };
 use common::{
     config::AudioConfiguration,
@@ -159,16 +160,28 @@ impl AudioHandler {
                 destination,
                 code_or_message,
             } => {
-                logger::log(format!("JACK Connection Error occured attempting to connect [{source}] to [{destination}]. {code_or_message}"), logger::LogContext::AudioHandler, logger::LogKind::Error);
+                logger::log(
+                    format!(
+                        "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. {code_or_message}"
+                    ),
+                    logger::LogContext::AudioHandler,
+                    logger::LogKind::Error,
+                );
             }
             Error::PortAlreadyConnected(source, destination) => {
-                logger::log(format!(
+                logger::log(
+                    format!(
                         "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. Ports are already connected."
-                    ), logger::LogContext::AudioHandler, logger::LogKind::Error);
+                    ),
+                    logger::LogContext::AudioHandler,
+                    logger::LogKind::Error,
+                );
             }
             Error::PortDisconnectionError => {
                 logger::log(
-                    format!("JACK Disconnection Error occured attempting to connect port #{from} to #{to}."),
+                    format!(
+                        "JACK Disconnection Error occured attempting to connect port #{from} to #{to}."
+                    ),
                     logger::LogContext::AudioHandler,
                     logger::LogKind::Error,
                 );

@@ -4,7 +4,7 @@ use jack::{
     ProcessScope, Unowned,
 };
 
-use crate::{audio::source::SourceConfig, logger, CrossbeamNetwork};
+use crate::{CrossbeamNetwork, audio::source::SourceConfig, logger};
 
 use common::{
     command::ControlCommand,

@@ -19,7 +19,7 @@ use common::{
 
 use crate::{audio::handler::AudioHandler, playback::PlaybackHandler};
 use clap::Parser;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use metronome::Metronome;
 use network::NetworkHandler;
 use std::{path::PathBuf, str::FromStr};
