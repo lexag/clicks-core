@@ -9,7 +9,7 @@ use crate::{audio::source::SourceConfig, logger, CrossbeamNetwork};
 use common::{
     command::ControlCommand,
     network::JACKStatus,
-    status::{AudioSourceStatus, CombinedStatus, ProcessStatus, StatusMessage},
+    status::{AudioSourceStatus, CombinedStatus, Notification, ProcessStatus},
 };
 
 pub struct AudioProcessor {
@@ -70,7 +70,7 @@ impl ProcessHandler for AudioProcessor {
                             let _ = self
                                 .cbnet
                                 .status_tx
-                                .try_send(StatusMessage::CueStatus(self.status.cue.clone()));
+                                .try_send(Notification::CueChanged(self.status.cue.clone()));
                         }
                         ControlCommand::LoadCueFromSelfIndex => {
                             let _ = self.cbnet.cmd_tx.try_send(ControlCommand::LoadCue(
@@ -109,8 +109,8 @@ impl ProcessHandler for AudioProcessor {
                             let _ = self
                                 .cbnet
                                 .status_tx
-                                .try_send(StatusMessage::CueStatus(self.status.cue.clone()));
-                            let _ = self.cbnet.status_tx.try_send(StatusMessage::ShowStatus(
+                                .try_send(Notification::CueChanged(self.status.cue.clone()));
+                            let _ = self.cbnet.status_tx.try_send(Notification::ShowChanged(
                                 self.status.show.lightweight(),
                             ));
                         }
@@ -195,9 +195,12 @@ impl ProcessHandler for AudioProcessor {
             chrono::prelude::Utc::now().timestamp_micros() as u64;
         self.status.process_status.cpu_use = c.cpu_load();
 
-        let _ = self.cbnet.status_tx.try_send(StatusMessage::ProcessStatus(
-            self.status.process_status.clone(),
-        ));
+        let _ = self
+            .cbnet
+            .status_tx
+            .try_send(Notification::TransportChanged(
+                self.status.process_status.clone(),
+            ));
 
         return Control::Continue;
     }

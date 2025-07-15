@@ -9,7 +9,7 @@ use crate::{
 use common::{
     config::AudioConfiguration,
     network::{AudioDevice, JACKStatus},
-    status::StatusMessage,
+    status::Notification,
 };
 use crossbeam_channel::{Receiver, Sender};
 use jack::{
@@ -294,7 +294,7 @@ impl AudioHandler {
         let _ = self
             .cbnet
             .status_tx
-            .try_send(StatusMessage::JACKStatus(status));
+            .try_send(Notification::JACKStateChanged(status));
     }
 
     pub fn get_hw_devices(&self) -> Vec<AudioDevice> {

@@ -6,7 +6,7 @@ use common::{
     command::ControlCommand,
     control::ControlMessage,
     network::{NetworkStatus, SubscriberInfo},
-    status::{StatusMessage, StatusMessageKind},
+    status::{Notification, NotificationKind},
 };
 use crossbeam_channel::Sender;
 use jack::Control;
@@ -71,7 +71,7 @@ impl NetworkHandler {
                             );
                             self.subscribers.push(info);
                         }
-                        self.send_to_all(StatusMessage::NetworkStatus(NetworkStatus {
+                        self.send_to_all(Notification::NetworkChanged(NetworkStatus {
                             subscribers: self.subscribers.clone(),
                         }));
                         return Some(ControlMessage::NotifySubscribers);
@@ -83,7 +83,7 @@ impl NetworkHandler {
                             .into_iter()
                             .filter(|sub| !(sub.address == info.address && sub.port == info.port))
                             .collect();
-                        self.send_to_all(StatusMessage::NetworkStatus(NetworkStatus {
+                        self.send_to_all(Notification::NetworkChanged(NetworkStatus {
                             subscribers: self.subscribers.clone(),
                         }));
                         return Some(ControlMessage::NotifySubscribers);
@@ -97,8 +97,8 @@ impl NetworkHandler {
         return None;
     }
 
-    pub fn send_to_all(&mut self, msg: StatusMessage) {
-        if msg.to_kind() != StatusMessageKind::ProcessStatus {
+    pub fn send_to_all(&mut self, msg: Notification) {
+        if msg.to_kind() != NotificationKind::TransportChanged {
             logger::log(
                 format!("Sending network message: {msg:?}"),
                 logger::LogContext::Network,

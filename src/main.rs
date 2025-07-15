@@ -10,7 +10,7 @@ mod timecode;
 
 use common::{
     self, command::ControlCommand, config::BootProgramOrder, control::ControlMessage, cue::Cue,
-    network::JACKStatus, show::Show, status::StatusMessage,
+    network::JACKStatus, show::Show, status::Notification,
 };
 
 use crate::{audio::handler::AudioHandler, playback::PlaybackHandler};
@@ -25,14 +25,14 @@ use timecode::TimecodeSource;
 pub struct CrossbeamNetwork {
     pub cmd_tx: Sender<ControlCommand>,
     pub cmd_rx: Receiver<ControlCommand>,
-    pub status_tx: Sender<StatusMessage>,
-    pub status_rx: Receiver<StatusMessage>,
+    pub status_tx: Sender<Notification>,
+    pub status_rx: Receiver<Notification>,
 }
 
 impl CrossbeamNetwork {
     fn new() -> Self {
         let (cmd_tx, cmd_rx): (Sender<ControlCommand>, Receiver<ControlCommand>) = unbounded();
-        let (status_tx, status_rx): (Sender<StatusMessage>, Receiver<StatusMessage>) = unbounded();
+        let (status_tx, status_rx): (Sender<Notification>, Receiver<Notification>) = unbounded();
         Self {
             cmd_tx,
             cmd_rx,
@@ -106,19 +106,19 @@ fn main() {
                         ControlCommand::LoadShow(show) => pbh.load_show(show),
                         ControlCommand::SetChannelGain(channel, gain) => {
                             config.channels.channels[channel].gain = gain;
-                            nh.send_to_all(StatusMessage::ConfigurationStatus(config.clone()));
+                            nh.send_to_all(Notification::ConfigurationChanged(config.clone()));
                         }
                         _ => {}
                     }
                 }
                 ControlMessage::RoutingChangeRequest(a, b, connect) => {
                     ah.try_route_ports(a, b, connect);
-                    nh.send_to_all(StatusMessage::JACKStatus(ah.get_jack_status()));
+                    nh.send_to_all(Notification::JACKStateChanged(ah.get_jack_status()));
                 }
                 ControlMessage::NotifySubscribers => {
                     let _ = cbnet.cmd_tx.send(ControlCommand::DumpStatus);
-                    nh.send_to_all(StatusMessage::JACKStatus(ah.get_jack_status()));
-                    nh.send_to_all(StatusMessage::ConfigurationStatus(config.clone()));
+                    nh.send_to_all(Notification::JACKStateChanged(ah.get_jack_status()));
+                    nh.send_to_all(Notification::ConfigurationChanged(config.clone()));
                 }
                 ControlMessage::Shutdown => {
                     boot::write_config(config);
@@ -127,7 +127,7 @@ fn main() {
                         logger::LogContext::Boot,
                         logger::LogKind::Note,
                     );
-                    nh.send_to_all(StatusMessage::Shutdown);
+                    nh.send_to_all(Notification::ShutdownOccured);
                     ah.shutdown();
                     break;
                 }
@@ -151,7 +151,7 @@ fn main() {
 
                     ah.configure(config.audio.clone());
                     ah.start(sources);
-                    nh.send_to_all(StatusMessage::JACKStatus(ah.get_jack_status()));
+                    nh.send_to_all(Notification::JACKStateChanged(ah.get_jack_status()));
                     let _ = cbnet
                         .cmd_tx
                         .try_send(ControlCommand::LoadShow(show.clone()));
@@ -159,21 +159,21 @@ fn main() {
 
                 ControlMessage::SetConfigurationRequest(conf) => {
                     config = conf;
-                    nh.send_to_all(StatusMessage::ConfigurationStatus(config.clone()));
+                    nh.send_to_all(Notification::ConfigurationChanged(config.clone()));
                 }
                 _ => {}
             },
         };
 
-        // Get a possible StatusMessage from audio processor
+        // Get a possible Notification from audio processor
         // and send it to network handler to broadcast.
         match cbnet.status_rx.try_recv() {
             Ok(msg) => {
                 status_counter += 1;
                 match msg {
-                    StatusMessage::ProcessStatus(status) => {
+                    Notification::TransportChanged(status) => {
                         if status.clone().running || status_counter > 16 {
-                            nh.send_to_all(StatusMessage::ProcessStatus(status));
+                            nh.send_to_all(Notification::TransportChanged(status));
                             status_counter = 0;
                         }
                     }
