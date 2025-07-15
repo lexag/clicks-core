@@ -87,7 +87,7 @@ fn main() {
 
     let mut pbh = PlaybackHandler::new(show_path.clone(), 30);
     let mut ah = AudioHandler::new(32, cbnet.clone());
-    let mut nh = JsonNetHandler::new("8081");
+    let mut nh = JsonNetHandler::new(8081);
 
     let mut status_counter: u8 = 0;
     loop {
