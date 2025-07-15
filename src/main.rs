@@ -2,24 +2,24 @@
 
 mod audio;
 mod boot;
+mod communication;
 mod logger;
-mod metronome;
-mod network;
-mod playback;
-mod timecode;
 
 use common::{
     self, command::ControlCommand, config::BootProgramOrder, control::ControlMessage, cue::Cue,
     network::JACKStatus, show::Show, status::Notification,
 };
 
-use crate::{audio::handler::AudioHandler, playback::PlaybackHandler};
+use crate::{
+    audio::{
+        handler::AudioHandler, metronome::Metronome, playback::PlaybackHandler,
+        timecode::TimecodeSource,
+    },
+    communication::jsonnet::JsonNetHandler,
+};
 use clap::Parser;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use metronome::Metronome;
-use network::NetworkHandler;
 use std::{path::PathBuf, str::FromStr};
-use timecode::TimecodeSource;
 
 #[derive(Clone)]
 pub struct CrossbeamNetwork {
@@ -87,7 +87,7 @@ fn main() {
 
     let mut pbh = PlaybackHandler::new(show_path.clone(), 30);
     let mut ah = AudioHandler::new(32, cbnet.clone());
-    let mut nh = NetworkHandler::new("8081");
+    let mut nh = JsonNetHandler::new("8081");
     nh.start();
 
     let mut status_counter: u8 = 0;

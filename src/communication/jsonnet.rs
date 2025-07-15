@@ -11,14 +11,14 @@ use common::{
 use crossbeam_channel::Sender;
 use jack::Control;
 
-pub struct NetworkHandler {
+pub struct JsonNetHandler {
     socket: UdpSocket,
     subscribers: Vec<SubscriberInfo>,
 }
 
-impl NetworkHandler {
-    pub fn new(port: &str) -> NetworkHandler {
-        let nh = NetworkHandler {
+impl JsonNetHandler {
+    pub fn new(port: &str) -> Self {
+        let nh = Self {
             subscribers: vec![],
             socket: UdpSocket::bind(format!("192.168.1.125:{port}"))
                 .expect("couldn't open local port"),
