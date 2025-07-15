@@ -321,15 +321,16 @@ impl AudioSource for PlaybackDevice {
                 }
             }
 
-            if self.current_sample < 0 {
-                return Ok(&[0.0f32; 96000][0..num_samples as usize]);
-            }
-            if self.current_sample as u32 + num_samples > self.clips[self.current_clip].get_length()
-            {
-                self.active = false;
-                return Ok(&[0.0f32; 96000][0..num_samples as usize]);
-            }
             if self.active {
+                if self.current_sample < 0 {
+                    return Ok(&[0.0f32; 96000][0..num_samples as usize]);
+                }
+                if self.current_sample as u32 + num_samples
+                    > self.clips[self.current_clip].get_length()
+                {
+                    self.active = false;
+                    return Ok(&[0.0f32; 96000][0..num_samples as usize]);
+                }
                 let buf = self.clips[self.current_clip]
                     .read_buffer_slice(self.current_sample as u32, num_samples as usize);
                 self.current_sample += num_samples as i32;

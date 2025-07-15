@@ -3,8 +3,9 @@ use common::{network::SubscriberInfo, status::Notification};
 use local_ip_address::local_ip;
 use std::net::{SocketAddr, UdpSocket};
 
-const BUFFER_SIZE: usize = 1024 * 1024;
+const BUFFER_SIZE: usize = 1024 * 64;
 
+#[derive(Debug)]
 pub struct NetworkPort {
     socket: UdpSocket,
     buffer: [u8; BUFFER_SIZE],

@@ -15,7 +15,9 @@ use crate::{
         handler::AudioHandler, metronome::Metronome, playback::PlaybackHandler,
         timecode::TimecodeSource,
     },
-    communication::{interface::CommunicationInterface, jsonnet::JsonNetHandler},
+    communication::{
+        interface::CommunicationInterface, jsonnet::JsonNetHandler, osc::OscNetHandler,
+    },
 };
 use clap::Parser;
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -88,16 +90,20 @@ fn main() {
     let mut pbh = PlaybackHandler::new(show_path.clone(), 30);
     let mut ah = AudioHandler::new(32, cbnet.clone());
     let mut nh = JsonNetHandler::new(8081);
+    let mut osch = OscNetHandler::new(8082);
 
     let mut status_counter: u8 = 0;
-    loop {
+    let mut run_flag = true;
+    while run_flag {
         // Get a possible ControlMessage from network handler
         // and decide how to handle it. Network handler has already handled and consumed
         // network-specific messages.
-        let control_message = nh.get_single_input();
-        match control_message {
-            None => {}
-            Some(msg) => match msg {
+        for control_message in [nh.get_all_inputs(), osch.get_all_inputs()]
+            .iter()
+            .flatten()
+        {
+            println!("{:?}", control_message);
+            match control_message.clone() {
                 ControlMessage::ControlCommand(cmd) => {
                     let _ = cbnet.cmd_tx.send(cmd.clone());
                     match cmd {
@@ -120,7 +126,7 @@ fn main() {
                     nh.notify(Notification::ConfigurationChanged(config.clone()));
                 }
                 ControlMessage::Shutdown => {
-                    boot::write_config(config);
+                    boot::write_config(config.clone());
                     logger::log(
                         format!("Shutdown. Goodnight.",),
                         logger::LogContext::Boot,
@@ -128,6 +134,7 @@ fn main() {
                     );
                     nh.notify(Notification::ShutdownOccured);
                     ah.shutdown();
+                    run_flag = false;
                     break;
                 }
 
@@ -161,8 +168,8 @@ fn main() {
                     nh.notify(Notification::ConfigurationChanged(config.clone()));
                 }
                 _ => {}
-            },
-        };
+            };
+        }
 
         // Get a possible Notification from audio processor
         // and send it to network handler to broadcast.
