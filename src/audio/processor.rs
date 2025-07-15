@@ -4,7 +4,7 @@ use jack::{
     ProcessScope, Unowned,
 };
 
-use crate::{CrossbeamNetwork, audio::source::SourceConfig, logger};
+use crate::{audio::source::SourceConfig, logger, CrossbeamNetwork};
 
 use common::{
     command::ControlCommand,
@@ -157,7 +157,6 @@ impl ProcessHandler for AudioProcessor {
         // Get status from all sources and compile onto self.status
         let mut source_statuses: Vec<AudioSourceStatus> = vec![]; // stati??
         for (i, source) in &mut self.sources.iter_mut().enumerate() {
-            self.status.process_status.gains[i] = source.get_gain();
             let status = source.source_device.get_status(c, ps);
             match status {
                 AudioSourceStatus::BeatStatus(ref status) => {

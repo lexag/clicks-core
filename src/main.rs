@@ -19,7 +19,7 @@ use common::{
 
 use crate::{audio::handler::AudioHandler, playback::PlaybackHandler};
 use clap::Parser;
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use metronome::Metronome;
 use network::NetworkHandler;
 use std::{path::PathBuf, str::FromStr};
@@ -109,6 +109,12 @@ fn main() {
                     match cmd {
                         ControlCommand::LoadCue(cue) => pbh.load_cue(cue),
                         ControlCommand::LoadShow(show) => pbh.load_show(show),
+                        ControlCommand::SetChannelGain(channel, gain) => {
+                            config.channels.channels[channel].gain = gain;
+                            nh.send_to_all(StatusMessageKind::ConfigurationStatus(Some(
+                                config.clone(),
+                            )));
+                        }
                         _ => {}
                     }
                 }
@@ -146,7 +152,9 @@ fn main() {
                     ];
                     pbh.load_show(show.clone());
                     sources.extend(pbh.create_audio_sources());
-                    println!("{:?}", sources);
+                    for (i, source) in sources.iter_mut().enumerate() {
+                        source.set_gain(config.channels.channels[i].gain);
+                    }
 
                     ah.configure(config.audio.clone());
                     ah.start(sources);
