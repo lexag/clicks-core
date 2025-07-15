@@ -29,13 +29,7 @@ impl AudioProcessor {
             ports,
             sources,
             cbnet,
-            status: CombinedStatus {
-                process_status: ProcessStatus {
-                    gains: vec![0.0f32; 64],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            status: CombinedStatus::default(),
         }
     }
 }
