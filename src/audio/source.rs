@@ -3,6 +3,7 @@ use jack::{Client, Error, ProcessScope};
 use common::command::{CommandError, ControlCommand};
 
 use common::status::{AudioSourceStatus, ProcessStatus};
+use std::fmt::Debug;
 use std::ops::Div;
 
 pub trait AudioSource: Send {
@@ -21,6 +22,12 @@ pub struct SourceConfig {
     pub source_device: Box<dyn AudioSource>,
     gain_mult: f32,
     gain: f32,
+}
+
+impl Debug for SourceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "SourceConfig '{}'", self.name)
+    }
 }
 
 impl SourceConfig {

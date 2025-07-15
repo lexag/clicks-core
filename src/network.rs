@@ -1,25 +1,25 @@
 use std::net::UdpSocket;
 
-use crate::logger;
+use crate::{logger, CrossbeamNetwork};
 use chrono::{DateTime, Utc};
 use common::{
     command::ControlCommand,
-    network::{ControlMessageKind, NetworkStatus, StatusMessageKind, SubscriberInfo},
+    control::ControlMessage,
+    network::{NetworkStatus, SubscriberInfo},
+    status::{StatusMessage, StatusMessageKind},
 };
 use crossbeam_channel::Sender;
 use jack::Control;
 
 pub struct NetworkHandler {
     socket: UdpSocket,
-    cmd_tx: Sender<ControlCommand>,
     subscribers: Vec<SubscriberInfo>,
 }
 
 impl NetworkHandler {
-    pub fn new(port: &str, cmd_tx: Sender<ControlCommand>) -> NetworkHandler {
+    pub fn new(port: &str) -> NetworkHandler {
         let nh = NetworkHandler {
             subscribers: vec![],
-            cmd_tx,
             socket: UdpSocket::bind(format!("192.168.1.125:{port}"))
                 .expect("couldn't open local port"),
         };
@@ -31,8 +31,8 @@ impl NetworkHandler {
         let _ = self.socket.set_nonblocking(true);
     }
 
-    pub fn tick(&mut self) -> Option<ControlMessageKind> {
-        let mut buf = [0; 1024];
+    pub fn tick(&mut self) -> Option<ControlMessage> {
+        let mut buf = [0; 1024 * 64];
         match self.socket.recv_from(&mut buf) {
             Ok((amt, src)) => {
                 for subscriber in &mut self.subscribers {
@@ -40,7 +40,7 @@ impl NetworkHandler {
                         subscriber.last_contact = Utc::now().to_rfc3339();
                     }
                 }
-                let msg: ControlMessageKind =
+                let msg: ControlMessage =
                     match serde_json::from_str(std::str::from_utf8(&buf[..amt]).unwrap()) {
                         Ok(msg) => msg,
                         Err(err) => {
@@ -51,8 +51,8 @@ impl NetworkHandler {
                         }
                     };
                 match msg.clone() {
-                    ControlMessageKind::Ping => {}
-                    ControlMessageKind::SubscribeRequest(info) => {
+                    ControlMessage::Ping => {}
+                    ControlMessage::SubscribeRequest(info) => {
                         let mut recognized_subscriber = false;
                         for subscriber in &mut self.subscribers {
                             if subscriber.address == info.address && subscriber.port == info.port {
@@ -71,22 +71,22 @@ impl NetworkHandler {
                             );
                             self.subscribers.push(info);
                         }
-                        self.send_to_all(StatusMessageKind::NetworkStatus(Some(NetworkStatus {
+                        self.send_to_all(StatusMessage::NetworkStatus(NetworkStatus {
                             subscribers: self.subscribers.clone(),
-                        })));
-                        return Some(ControlMessageKind::NotifySubscribers);
+                        }));
+                        return Some(ControlMessage::NotifySubscribers);
                     }
-                    ControlMessageKind::UnsubscribeRequest(info) => {
+                    ControlMessage::UnsubscribeRequest(info) => {
                         self.subscribers = self
                             .subscribers
                             .clone()
                             .into_iter()
                             .filter(|sub| !(sub.address == info.address && sub.port == info.port))
                             .collect();
-                        self.send_to_all(StatusMessageKind::NetworkStatus(Some(NetworkStatus {
+                        self.send_to_all(StatusMessage::NetworkStatus(NetworkStatus {
                             subscribers: self.subscribers.clone(),
-                        })));
-                        return Some(ControlMessageKind::NotifySubscribers);
+                        }));
+                        return Some(ControlMessage::NotifySubscribers);
                     }
                     _ => {}
                 }
@@ -97,7 +97,14 @@ impl NetworkHandler {
         return None;
     }
 
-    pub fn send_to_all(&mut self, msg: StatusMessageKind) {
+    pub fn send_to_all(&mut self, msg: StatusMessage) {
+        if msg.to_kind() != StatusMessageKind::ProcessStatus {
+            logger::log(
+                format!("Sending network message: {msg:?}"),
+                logger::LogContext::Network,
+                logger::LogKind::Debug,
+            );
+        }
         self.subscribers = self
             .subscribers
             .clone()
@@ -111,32 +118,21 @@ impl NetworkHandler {
             .collect();
 
         for subscriber in &self.subscribers {
-            for msg_kind in &subscriber.message_kinds {
-                if std::mem::discriminant(&msg) == std::mem::discriminant(msg_kind) {
-                    match self.socket.send_to(
-                        serde_json::to_string(&msg).unwrap().as_bytes(),
-                        format!("{}:{}", subscriber.address, subscriber.port),
-                    ) {
-                        Ok(amt) => {}
-                        Err(err) => {
-                            logger::log(
-                                format!("Subscriber send error: {err}"),
-                                logger::LogContext::Network,
-                                logger::LogKind::Error,
-                            );
-                        }
+            if subscriber.message_kinds.contains(&msg.to_kind()) {
+                match self.socket.send_to(
+                    serde_json::to_string(&msg).unwrap().as_bytes(),
+                    format!("{}:{}", subscriber.address, subscriber.port),
+                ) {
+                    Ok(amt) => {}
+                    Err(err) => {
+                        logger::log(
+                            format!("Subscriber send error: {err}"),
+                            logger::LogContext::Network,
+                            logger::LogKind::Error,
+                        );
                     }
                 }
             }
-        }
-        if std::mem::discriminant(&msg)
-            != std::mem::discriminant(&StatusMessageKind::ProcessStatus(None))
-        {
-            //            logger::log(
-            //                format!("{}", serde_json::to_string(&msg).unwrap()),
-            //                logger::LogContext::Network,
-            //                logger::LogKind::Debug,
-            //            );
         }
     }
 }

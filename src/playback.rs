@@ -61,18 +61,20 @@ impl AudioClip {
 
 pub struct PlaybackHandler {
     clips: HashMap<usize, Vec<AudioClip>>,
-    config_path: PathBuf,
+    show_path: PathBuf,
+    num_channels: usize,
 }
 
 impl PlaybackHandler {
-    pub fn new(config_path: PathBuf) -> PlaybackHandler {
+    pub fn new(show_path: PathBuf, num_channels: usize) -> PlaybackHandler {
         PlaybackHandler {
-            config_path,
+            show_path,
             clips: HashMap::new(),
+            num_channels,
         }
     }
 
-    pub fn load_show(&mut self, show: Show, num_channels: usize) {
+    pub fn load_show(&mut self, show: Show) {
         let mut max_clips_per_cue_per_channel: HashMap<usize, usize> = HashMap::new();
         for (cue_idx, cue) in show.cues.iter().enumerate() {
             let mut clips_in_cue = 0;
@@ -99,13 +101,13 @@ impl PlaybackHandler {
             );
         }
 
-        for channel_idx in 0..num_channels {
+        for channel_idx in 0..self.num_channels {
             let max_clips_in_channel: usize =
                 *(max_clips_per_cue_per_channel.get(&channel_idx).unwrap());
+            if !self.clips.contains_key(&channel_idx) {
+                self.clips.insert(channel_idx, vec![]);
+            }
             for clip_idx in 0..max_clips_in_channel {
-                if !self.clips.contains_key(&channel_idx) {
-                    self.clips.insert(channel_idx, vec![]);
-                }
                 self.clips
                     .get_mut(&channel_idx)
                     .unwrap()
@@ -116,9 +118,9 @@ impl PlaybackHandler {
 
     pub fn create_audio_sources(&mut self) -> Vec<SourceConfig> {
         let mut devices = vec![];
-        for (channel_idx, clips) in &self.clips {
-            let mut device = PlaybackDevice::new(*channel_idx, self.config_path.clone());
-            for clip in clips {
+        for channel_idx in 0..self.num_channels {
+            let mut device = PlaybackDevice::new(channel_idx, self.show_path.clone());
+            for clip in self.clips.get(&channel_idx).unwrap() {
                 device.clips.push(AudioClip {
                     clip_idx: Arc::clone(&clip.clip_idx),
                     buffer: Arc::clone(&clip.buffer),
@@ -157,7 +159,7 @@ impl PlaybackHandler {
             clips_in_cue.sort();
             clips_in_cue.dedup();
             for (incue_index, clip_idx) in clips_in_cue.iter().enumerate() {
-                let mut reader = hound::WavReader::open(self.config_path.join(format!(
+                let mut reader = hound::WavReader::open(self.show_path.join(format!(
                     "playback_media/{:0>3}/{:0>3}.wav",
                     channel_idx, clip_idx
                 )))
@@ -209,21 +211,21 @@ pub struct PlaybackDevice {
     pub current_sample: i32,
     pub current_clip: usize,
     clips: Vec<AudioClip>,
-    config_path: PathBuf,
+    show_path: PathBuf,
     cue: Cue,
     active: bool,
     status: ProcessStatus,
 }
 
 impl PlaybackDevice {
-    fn new(channel_idx: usize, config_path: PathBuf) -> PlaybackDevice {
+    fn new(channel_idx: usize, show_path: PathBuf) -> PlaybackDevice {
         PlaybackDevice {
             status: ProcessStatus::default(),
             channel_idx,
             current_sample: 0,
             current_clip: 0,
             clips: vec![],
-            config_path,
+            show_path,
             cue: Cue::empty(),
             active: false,
         }
