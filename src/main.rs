@@ -15,7 +15,7 @@ use crate::{
         handler::AudioHandler, metronome::Metronome, playback::PlaybackHandler,
         timecode::TimecodeSource,
     },
-    communication::jsonnet::JsonNetHandler,
+    communication::{interface::CommunicationInterface, jsonnet::JsonNetHandler},
 };
 use clap::Parser;
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -88,14 +88,13 @@ fn main() {
     let mut pbh = PlaybackHandler::new(show_path.clone(), 30);
     let mut ah = AudioHandler::new(32, cbnet.clone());
     let mut nh = JsonNetHandler::new("8081");
-    nh.start();
 
     let mut status_counter: u8 = 0;
     loop {
         // Get a possible ControlMessage from network handler
         // and decide how to handle it. Network handler has already handled and consumed
         // network-specific messages.
-        let control_message = nh.tick();
+        let control_message = nh.get_single_input();
         match control_message {
             None => {}
             Some(msg) => match msg {
@@ -106,19 +105,19 @@ fn main() {
                         ControlCommand::LoadShow(show) => pbh.load_show(show),
                         ControlCommand::SetChannelGain(channel, gain) => {
                             config.channels.channels[channel].gain = gain;
-                            nh.send_to_all(Notification::ConfigurationChanged(config.clone()));
+                            nh.notify(Notification::ConfigurationChanged(config.clone()));
                         }
                         _ => {}
                     }
                 }
                 ControlMessage::RoutingChangeRequest(a, b, connect) => {
                     ah.try_route_ports(a, b, connect);
-                    nh.send_to_all(Notification::JACKStateChanged(ah.get_jack_status()));
+                    nh.notify(Notification::JACKStateChanged(ah.get_jack_status()));
                 }
                 ControlMessage::NotifySubscribers => {
                     let _ = cbnet.cmd_tx.send(ControlCommand::DumpStatus);
-                    nh.send_to_all(Notification::JACKStateChanged(ah.get_jack_status()));
-                    nh.send_to_all(Notification::ConfigurationChanged(config.clone()));
+                    nh.notify(Notification::JACKStateChanged(ah.get_jack_status()));
+                    nh.notify(Notification::ConfigurationChanged(config.clone()));
                 }
                 ControlMessage::Shutdown => {
                     boot::write_config(config);
@@ -127,7 +126,7 @@ fn main() {
                         logger::LogContext::Boot,
                         logger::LogKind::Note,
                     );
-                    nh.send_to_all(Notification::ShutdownOccured);
+                    nh.notify(Notification::ShutdownOccured);
                     ah.shutdown();
                     break;
                 }
@@ -151,7 +150,7 @@ fn main() {
 
                     ah.configure(config.audio.clone());
                     ah.start(sources);
-                    nh.send_to_all(Notification::JACKStateChanged(ah.get_jack_status()));
+                    nh.notify(Notification::JACKStateChanged(ah.get_jack_status()));
                     let _ = cbnet
                         .cmd_tx
                         .try_send(ControlCommand::LoadShow(show.clone()));
@@ -159,7 +158,7 @@ fn main() {
 
                 ControlMessage::SetConfigurationRequest(conf) => {
                     config = conf;
-                    nh.send_to_all(Notification::ConfigurationChanged(config.clone()));
+                    nh.notify(Notification::ConfigurationChanged(config.clone()));
                 }
                 _ => {}
             },
@@ -173,12 +172,12 @@ fn main() {
                 match msg {
                     Notification::TransportChanged(status) => {
                         if status.clone().running || status_counter > 16 {
-                            nh.send_to_all(Notification::TransportChanged(status));
+                            nh.notify(Notification::TransportChanged(status));
                             status_counter = 0;
                         }
                     }
                     _ => {
-                        nh.send_to_all(msg.clone());
+                        nh.notify(msg.clone());
                     }
                 }
             }
