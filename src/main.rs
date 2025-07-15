@@ -9,12 +9,8 @@ mod playback;
 mod timecode;
 
 use common::{
-    self,
-    command::ControlCommand,
-    config::BootProgramOrder,
-    cue::Cue,
-    network::{ControlMessageKind, JACKStatus, StatusMessageKind},
-    show::Show,
+    self, command::ControlCommand, config::BootProgramOrder, control::ControlMessage, cue::Cue,
+    network::JACKStatus, show::Show, status::StatusMessage,
 };
 
 use crate::{audio::handler::AudioHandler, playback::PlaybackHandler};
@@ -29,15 +25,14 @@ use timecode::TimecodeSource;
 pub struct CrossbeamNetwork {
     pub cmd_tx: Sender<ControlCommand>,
     pub cmd_rx: Receiver<ControlCommand>,
-    pub status_tx: Sender<StatusMessageKind>,
-    pub status_rx: Receiver<StatusMessageKind>,
+    pub status_tx: Sender<StatusMessage>,
+    pub status_rx: Receiver<StatusMessage>,
 }
 
 impl CrossbeamNetwork {
     fn new() -> Self {
         let (cmd_tx, cmd_rx): (Sender<ControlCommand>, Receiver<ControlCommand>) = unbounded();
-        let (status_tx, status_rx): (Sender<StatusMessageKind>, Receiver<StatusMessageKind>) =
-            unbounded();
+        let (status_tx, status_rx): (Sender<StatusMessage>, Receiver<StatusMessage>) = unbounded();
         Self {
             cmd_tx,
             cmd_rx,
@@ -97,49 +92,47 @@ fn main() {
 
     let mut status_counter: u8 = 0;
     loop {
-        // Get a possible ControlMessageKind from network handler
+        // Get a possible ControlMessage from network handler
         // and decide how to handle it. Network handler has already handled and consumed
         // network-specific messages.
         let control_message = nh.tick();
         match control_message {
             None => {}
             Some(msg) => match msg {
-                ControlMessageKind::ControlCommand(cmd) => {
+                ControlMessage::ControlCommand(cmd) => {
                     let _ = cbnet.cmd_tx.send(cmd.clone());
                     match cmd {
                         ControlCommand::LoadCue(cue) => pbh.load_cue(cue),
                         ControlCommand::LoadShow(show) => pbh.load_show(show),
                         ControlCommand::SetChannelGain(channel, gain) => {
                             config.channels.channels[channel].gain = gain;
-                            nh.send_to_all(StatusMessageKind::ConfigurationStatus(Some(
-                                config.clone(),
-                            )));
+                            nh.send_to_all(StatusMessage::ConfigurationStatus(config.clone()));
                         }
                         _ => {}
                     }
                 }
-                ControlMessageKind::RoutingChangeRequest(a, b, connect) => {
+                ControlMessage::RoutingChangeRequest(a, b, connect) => {
                     ah.try_route_ports(a, b, connect);
-                    nh.send_to_all(StatusMessageKind::JACKStatus(Some(ah.get_jack_status())));
+                    nh.send_to_all(StatusMessage::JACKStatus(ah.get_jack_status()));
                 }
-                ControlMessageKind::NotifySubscribers => {
+                ControlMessage::NotifySubscribers => {
                     let _ = cbnet.cmd_tx.send(ControlCommand::DumpStatus);
-                    nh.send_to_all(StatusMessageKind::JACKStatus(Some(ah.get_jack_status())));
-                    nh.send_to_all(StatusMessageKind::ConfigurationStatus(Some(config.clone())));
+                    nh.send_to_all(StatusMessage::JACKStatus(ah.get_jack_status()));
+                    nh.send_to_all(StatusMessage::ConfigurationStatus(config.clone()));
                 }
-                ControlMessageKind::Shutdown => {
+                ControlMessage::Shutdown => {
                     boot::write_config(config);
                     logger::log(
                         format!("Shutdown. Goodnight.",),
                         logger::LogContext::Boot,
                         logger::LogKind::Note,
                     );
-                    nh.send_to_all(StatusMessageKind::Shutdown);
+                    nh.send_to_all(StatusMessage::Shutdown);
                     ah.shutdown();
                     break;
                 }
 
-                ControlMessageKind::Initialize => {
+                ControlMessage::Initialize => {
                     let mut sources = vec![
                         audio::source::SourceConfig::new(
                             "metronome".to_string(),
@@ -158,29 +151,29 @@ fn main() {
 
                     ah.configure(config.audio.clone());
                     ah.start(sources);
-                    nh.send_to_all(StatusMessageKind::JACKStatus(Some(ah.get_jack_status())));
+                    nh.send_to_all(StatusMessage::JACKStatus(ah.get_jack_status()));
                     let _ = cbnet
                         .cmd_tx
                         .try_send(ControlCommand::LoadShow(show.clone()));
                 }
 
-                ControlMessageKind::SetConfigurationRequest(conf) => {
+                ControlMessage::SetConfigurationRequest(conf) => {
                     config = conf;
-                    nh.send_to_all(StatusMessageKind::ConfigurationStatus(Some(config.clone())));
+                    nh.send_to_all(StatusMessage::ConfigurationStatus(config.clone()));
                 }
                 _ => {}
             },
         };
 
-        // Get a possible StatusMessageKind from audio processor
+        // Get a possible StatusMessage from audio processor
         // and send it to network handler to broadcast.
         match cbnet.status_rx.try_recv() {
             Ok(msg) => {
                 status_counter += 1;
                 match msg {
-                    StatusMessageKind::ProcessStatus(status) => {
-                        if status.clone().unwrap_or_default().running || status_counter > 16 {
-                            nh.send_to_all(StatusMessageKind::ProcessStatus(status));
+                    StatusMessage::ProcessStatus(status) => {
+                        if status.clone().running || status_counter > 16 {
+                            nh.send_to_all(StatusMessage::ProcessStatus(status));
                             status_counter = 0;
                         }
                     }

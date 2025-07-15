@@ -3,7 +3,8 @@ use crate::audio;
 use common::{
     command::{CommandError, ControlCommand},
     cue::{Beat, BeatEvent, Cue},
-    status::{AudioSourceStatus, CombinedStatus, ProcessStatus, TimeStatus, TimecodeInstant},
+    status::{AudioSourceStatus, CombinedStatus, ProcessStatus},
+    timecode::TimecodeInstant,
 };
 
 pub struct TimecodeSource {
@@ -164,13 +165,7 @@ impl TimecodeSource {
 
 impl audio::source::AudioSource for TimecodeSource {
     fn get_status(&mut self, _c: &jack::Client, _ps: &jack::ProcessScope) -> AudioSourceStatus {
-        return AudioSourceStatus::TimeStatus(TimeStatus {
-            h: self.current_time.h as usize,
-            m: self.current_time.m as usize,
-            s: self.current_time.s as usize,
-            f: self.current_time.f as usize,
-            fp: self.current_time.frame_progress as usize,
-        });
+        return AudioSourceStatus::TimeStatus(self.current_time.clone());
     }
     fn command(&mut self, command: ControlCommand) -> Result<(), CommandError> {
         match command {
