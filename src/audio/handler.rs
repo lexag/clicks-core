@@ -1,11 +1,10 @@
 use std::sync::Weak;
 
 use crate::{
-    CrossbeamNetwork,
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
-    logger,
+    logger, CrossbeamNetwork,
 };
 use common::{
     config::AudioConfiguration,
