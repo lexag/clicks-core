@@ -6,10 +6,11 @@ use common::{control::ControlMessage, network::SubscriberInfo};
 use rosc::address::{Matcher, OscAddress};
 use rosc::decoder::*;
 use rosc::*;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::time::SystemTime;
 
 // Valid control OSC addresses:
+// /subscribe i32
 // /control/
 //      transport/
 //          start
@@ -65,6 +66,7 @@ pub struct OscNetHandler {
     address: String,
     address_space: String,
     args: Vec<OscType>,
+    last_recv_src: SocketAddr,
 }
 
 impl CommunicationInterface for OscNetHandler {
@@ -72,9 +74,7 @@ impl CommunicationInterface for OscNetHandler {
         let mut inputs: Vec<ControlMessage> = vec![];
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
-            if !self.subscribers.contains(&src) {
-                self.subscribers.push(src);
-            }
+            self.last_recv_src = src;
             if let Ok((amt, packet)) = decode_udp(&buf[..amt]) {
                 self.handle_packet(packet);
             }
@@ -104,6 +104,7 @@ impl OscNetHandler {
             address: String::new(),
             address_space: String::new(),
             args: vec![],
+            last_recv_src: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
         }
     }
 
@@ -145,7 +146,6 @@ impl OscNetHandler {
         self.address_space = address_space.to_string();
         self.address = address.to_string();
 
-        println!("{} | {}", self.address_space, self.address);
         return self.address_space.as_str();
     }
 
@@ -156,8 +156,6 @@ impl OscNetHandler {
         if msg.addr.is_empty() || msg.addr.remove(0) != '/' {
             return;
         }
-
-        println!("{}, {:?}", message.addr, message.args);
 
         self.args = msg.args;
         self.address = msg.addr;
@@ -173,6 +171,18 @@ impl OscNetHandler {
                 "config" => self.addr_edit_config_(),
                 _ => {}
             },
+            "subscribe" => {
+                if let Some(port) = self
+                    .get_arg(0)
+                    .int()
+                    .unwrap_or_default()
+                    .try_into()
+                    .unwrap_or_default()
+                {
+                    self.subscribers
+                        .push(SocketAddr::new(self.last_recv_src.ip(), port as u16));
+                }
+            }
             _ => {
                 return;
             }
@@ -333,6 +343,12 @@ impl OscNetHandler {
                         OscType::Int(beat.bar_number.try_into().unwrap_or(0)),
                     ),
                 ]
+            }
+            Notification::PlaystateChanged(playstate) => {
+                vec![osc_msg(
+                    "/notification/transport/running",
+                    OscType::Bool(playstate),
+                )]
             }
             //          running
             //           {beat/, nextbeat/}

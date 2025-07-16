@@ -20,6 +20,7 @@ pub struct AudioProcessor {
     cbnet: CrossbeamNetwork,
     status: CombinedStatus,
     ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
+    status_changed_flag: bool,
 }
 
 impl AudioProcessor {
@@ -33,6 +34,7 @@ impl AudioProcessor {
             sources,
             cbnet,
             status: CombinedStatus::default(),
+            status_changed_flag: false,
         }
     }
 
@@ -87,9 +89,9 @@ impl AudioProcessor {
                 self.status.process_status.running = false;
                 self.status.cue = cue.clone();
 
-                let _ = self.cbnet.command(ControlCommand::TransportStop);
-                let _ = self.cbnet.command(ControlCommand::TransportZero);
-                let _ = self.cbnet.notify(Notification::CueChanged(
+                self.cbnet.command(ControlCommand::TransportStop);
+                self.cbnet.command(ControlCommand::TransportZero);
+                self.cbnet.notify(Notification::CueChanged(
                     self.status.process_status.cue_idx,
                     self.status.cue.clone(),
                 ));
@@ -107,7 +109,7 @@ impl AudioProcessor {
             }
             ControlCommand::LoadPreviousCue => {
                 if self.status.process_status.cue_idx > 0 {
-                    self.status.process_status.cue_idx += 1;
+                    self.status.process_status.cue_idx -= 1;
                     let _ = self.cbnet.command(ControlCommand::LoadCueFromSelfIndex);
                 }
             }
@@ -129,6 +131,17 @@ impl AudioProcessor {
         // to do source specific implementations
         for source in &mut self.sources {
             let _ = source.source_device.command(command.clone());
+        }
+
+        match command {
+            ControlCommand::TransportZero
+            | ControlCommand::TransportStop
+            | ControlCommand::TransportStart
+            | ControlCommand::TransportSeekBeat(..)
+            | ControlCommand::TransportJumpBeat(..) => {
+                self.status_changed_flag = true;
+            }
+            _ => {}
         }
     }
 
@@ -215,10 +228,11 @@ impl ProcessHandler for AudioProcessor {
             };
         }
 
-        if self.status.process_status.running {
+        if self.status.process_status.running || self.status_changed_flag {
             let _ = self.cbnet.notify(Notification::TransportChanged(
                 self.status.process_status.clone(),
             ));
+            self.status_changed_flag = false;
         }
 
         return Control::Continue;

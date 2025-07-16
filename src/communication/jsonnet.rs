@@ -108,7 +108,7 @@ impl CommunicationInterface for JsonNetHandler {
     }
 
     fn notify(&mut self, notification: Notification) {
-        if notification.to_kind() != NotificationKind::TransportChanged {
+        if false && notification.to_kind() != NotificationKind::TransportChanged {
             logger::log(
                 format!("Sending network message: {notification:?}"),
                 logger::LogContext::Network,
