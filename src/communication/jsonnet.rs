@@ -88,7 +88,6 @@ impl CommunicationInterface for JsonNetHandler {
                     self.notify(Notification::NetworkChanged(NetworkStatus {
                         subscribers: self.subscribers.clone(),
                     }));
-                    self.input_queue.push(ControlMessage::NotifySubscribers);
                 }
                 _ => {}
             }

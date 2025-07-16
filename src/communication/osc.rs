@@ -2,16 +2,44 @@ use crate::communication::{interface::CommunicationInterface, netport::NetworkPo
 use crate::logger;
 use common::command::ControlCommand;
 use common::{control::ControlMessage, network::SubscriberInfo};
-use rosc::address::Matcher;
+use rosc::address::{Matcher, OscAddress};
 use rosc::decoder::*;
 use rosc::*;
 use std::time::SystemTime;
+
+// Valid OSC addresses:
+// /control/
+//      transport/
+//          start
+//          stop
+//          zero
+//          seek i32
+//          jump i32
+//      cue/
+//          +
+//          -
+//          load i32
+//  /edit/
+//      channel/
+//          {idx}/
+//              gain f32
+//              mute bool
+//              route/
+//                  {to} bool
+//      route/
+//          {from}/
+//              {to}/
+//                  set bool
+//                  toggle
+//      config/
+//          ...
 
 pub struct OscNetHandler {
     port: NetworkPort,
     input_queue: Vec<ControlMessage>,
     subscribers: Vec<SubscriberInfo>,
     bundle_pool: Vec<OscBundle>,
+    matcher: Matcher,
     address: String,
     address_space: String,
     args: Vec<OscType>,
@@ -41,6 +69,7 @@ impl CommunicationInterface for OscNetHandler {
 impl OscNetHandler {
     pub fn new(port: usize) -> Self {
         Self {
+            matcher: Matcher::new("/null").unwrap(),
             port: NetworkPort::new(port),
             input_queue: vec![],
             subscribers: vec![],
@@ -89,6 +118,7 @@ impl OscNetHandler {
         self.address_space = address_space.to_string();
         self.address = address.to_string();
 
+        println!("{} | {}", self.address_space, self.address);
         return self.address_space.as_str();
     }
 
@@ -99,6 +129,8 @@ impl OscNetHandler {
         if msg.addr.is_empty() || msg.addr.remove(0) != '/' {
             return;
         }
+
+        println!("{}, {:?}", message.addr, message.args);
 
         self.args = msg.args;
         self.address = msg.addr;
@@ -131,13 +163,84 @@ impl OscNetHandler {
             "zero" => self.input_queue.push(ControlMessage::ControlCommand(
                 ControlCommand::TransportZero,
             )),
-            _ => return,
+            "seek" => {
+                if let Some(dest) = self.get_arg(0).int() {
+                    self.input_queue.push(ControlMessage::ControlCommand(
+                        ControlCommand::TransportSeekBeat(dest as usize),
+                    ));
+                }
+            }
+            "jump" => {
+                if let Some(dest) = self.get_arg(0).int() {
+                    self.input_queue.push(ControlMessage::ControlCommand(
+                        ControlCommand::TransportJumpBeat(dest as usize),
+                    ));
+                }
+            }
+            _ => {}
         }
     }
 
-    fn addr_control_cue_(&mut self) {}
+    fn addr_control_cue_(&mut self) {
+        match self.step_address() {
+            "+" => self
+                .input_queue
+                .push(ControlMessage::ControlCommand(ControlCommand::LoadNextCue)),
+            "-" => self.input_queue.push(ControlMessage::ControlCommand(
+                ControlCommand::LoadPreviousCue,
+            )),
+            "load" => {
+                if let Some(cue_idx) = self.get_arg(0).int() {
+                    self.input_queue.push(ControlMessage::ControlCommand(
+                        ControlCommand::LoadCueByIndex(cue_idx as usize),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
 
-    fn addr_edit_channel_(&mut self) {}
+    fn addr_edit_channel_(&mut self) {
+        if let Ok(matcher) = Matcher::new(&format!("/{}", self.address)) {
+            self.matcher = matcher;
+        } else {
+            return;
+        }
+        println!("{}", self.address);
+
+        for chidx in 0..32 {
+            if self.addreq(format!("/{chidx}/gain"))
+                && let Some(gain) = self.get_arg(0).float()
+            {
+                self.input_queue.push(ControlMessage::ControlCommand(
+                    ControlCommand::SetChannelGain(chidx, gain),
+                ));
+            }
+            if self.addreq(format!("/{chidx}/mute"))
+                && let Some(mute) = self.get_arg(0).bool()
+            {
+                self.input_queue.push(ControlMessage::ControlCommand(
+                    ControlCommand::SetChannelMute(chidx, mute),
+                ));
+            }
+            for out_idx in 0..64 {
+                if self.addreq(format!("/{chidx}/route/{out_idx}"))
+                    && let Some(patch) = self.get_arg(0).bool()
+                {
+                    self.input_queue
+                        .push(ControlMessage::RoutingChangeRequest(chidx, out_idx, patch));
+                }
+            }
+        }
+    }
 
     fn addr_edit_config_(&mut self) {}
+
+    fn get_arg(&mut self, idx: usize) -> OscType {
+        return self.args.get(idx).cloned().unwrap_or(OscType::Nil);
+    }
+
+    fn addreq(&self, addr: String) -> bool {
+        return self.matcher.match_address(&OscAddress::new(addr).unwrap());
+    }
 }
