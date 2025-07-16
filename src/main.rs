@@ -25,14 +25,14 @@ use std::{path::PathBuf, str::FromStr};
 
 #[derive(Clone)]
 pub struct CrossbeamNetwork {
-    pub cmd_tx: Sender<ControlCommand>,
+    cmd_tx: Sender<ControlCommand>,
     pub cmd_rx: Receiver<ControlCommand>,
-    pub status_tx: Sender<Notification>,
+    status_tx: Sender<Notification>,
     pub status_rx: Receiver<Notification>,
 }
 
 impl CrossbeamNetwork {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let (cmd_tx, cmd_rx): (Sender<ControlCommand>, Receiver<ControlCommand>) = unbounded();
         let (status_tx, status_rx): (Sender<Notification>, Receiver<Notification>) = unbounded();
         Self {
@@ -41,6 +41,14 @@ impl CrossbeamNetwork {
             status_tx,
             status_rx,
         }
+    }
+
+    pub fn notify(&self, notif: Notification) {
+        self.status_tx.try_send(notif);
+    }
+
+    pub fn command(&self, cmd: ControlCommand) {
+        self.cmd_tx.try_send(cmd);
     }
 }
 
@@ -105,7 +113,7 @@ fn main() {
             println!("{:?}", control_message);
             match control_message.clone() {
                 ControlMessage::ControlCommand(cmd) => {
-                    let _ = cbnet.cmd_tx.send(cmd.clone());
+                    let _ = cbnet.command(cmd.clone());
                     match cmd {
                         ControlCommand::LoadCue(cue) => pbh.load_cue(cue),
                         ControlCommand::LoadShow(show) => pbh.load_show(show),
@@ -121,7 +129,7 @@ fn main() {
                     nh.notify(Notification::JACKStateChanged(ah.get_jack_status()));
                 }
                 ControlMessage::NotifySubscribers => {
-                    let _ = cbnet.cmd_tx.send(ControlCommand::DumpStatus);
+                    let _ = cbnet.command(ControlCommand::DumpStatus);
                     nh.notify(Notification::JACKStateChanged(ah.get_jack_status()));
                     nh.notify(Notification::ConfigurationChanged(config.clone()));
                 }
@@ -158,9 +166,7 @@ fn main() {
                     ah.configure(config.audio.clone());
                     ah.start(sources);
                     nh.notify(Notification::JACKStateChanged(ah.get_jack_status()));
-                    let _ = cbnet
-                        .cmd_tx
-                        .try_send(ControlCommand::LoadShow(show.clone()));
+                    let _ = cbnet.command(ControlCommand::LoadShow(show.clone()));
                 }
 
                 ControlMessage::SetConfigurationRequest(conf) => {
@@ -178,13 +184,15 @@ fn main() {
                 status_counter += 1;
                 match msg {
                     Notification::TransportChanged(status) => {
-                        if status.clone().running || status_counter > 16 {
-                            nh.notify(Notification::TransportChanged(status));
+                        if status.running || status_counter > 16 {
+                            nh.notify(Notification::TransportChanged(status.clone()));
+                            osch.notify(Notification::TransportChanged(status.clone()));
                             status_counter = 0;
                         }
                     }
                     _ => {
                         nh.notify(msg.clone());
+                        osch.notify(msg.clone());
                     }
                 }
             }

@@ -1,13 +1,15 @@
 use crate::communication::{interface::CommunicationInterface, netport::NetworkPort};
 use crate::logger;
 use common::command::ControlCommand;
+use common::status::Notification;
 use common::{control::ControlMessage, network::SubscriberInfo};
 use rosc::address::{Matcher, OscAddress};
 use rosc::decoder::*;
 use rosc::*;
+use std::net::SocketAddr;
 use std::time::SystemTime;
 
-// Valid OSC addresses:
+// Valid control OSC addresses:
 // /control/
 //      transport/
 //          start
@@ -33,11 +35,31 @@ use std::time::SystemTime;
 //                  toggle
 //      config/
 //          ...
+//
+// Valid notification (response) OSC addresses:
+//  /notification/
+//      transport/
+//          running
+//          beat/
+//              index
+//              count
+//              bar
+//          timecode/
+//              h
+//              m
+//              s
+//      cue/
+//          index
+//          length
+//          ident
+//          name
+//
+//
 
 pub struct OscNetHandler {
     port: NetworkPort,
     input_queue: Vec<ControlMessage>,
-    subscribers: Vec<SubscriberInfo>,
+    subscribers: Vec<SocketAddr>,
     bundle_pool: Vec<OscBundle>,
     matcher: Matcher,
     address: String,
@@ -50,6 +72,9 @@ impl CommunicationInterface for OscNetHandler {
         let mut inputs: Vec<ControlMessage> = vec![];
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
+            if !self.subscribers.contains(&src) {
+                self.subscribers.push(src);
+            }
             if let Ok((amt, packet)) = decode_udp(&buf[..amt]) {
                 self.handle_packet(packet);
             }
@@ -57,8 +82,10 @@ impl CommunicationInterface for OscNetHandler {
         return inputs;
     }
 
-    fn notify(&mut self, notification: common::status::Notification) {
-        todo!()
+    fn notify(&mut self, notification: Notification) {
+        for msg in self.notif_to_osc(notification) {
+            self.send_message(msg);
+        }
     }
 
     fn notify_multiple(&mut self, notifications: Vec<common::status::Notification>) {
@@ -152,6 +179,29 @@ impl OscNetHandler {
         }
     }
 
+    fn send_message(&mut self, msg: OscMessage) {
+        self.send_packet(OscPacket::Message(msg));
+    }
+
+    fn send_messages(&mut self, messages: Vec<OscMessage>) {
+        self.send_packet(OscPacket::Bundle(OscBundle {
+            timetag: OscTime::try_from(SystemTime::now()).unwrap(),
+            content: messages
+                .iter()
+                .map(|m| OscPacket::Message(m.clone()))
+                .collect(),
+        }));
+    }
+
+    fn send_packet(&mut self, packet: OscPacket) {
+        for subscriber in self.subscribers.clone() {
+            self.port.send_to(
+                rosc::encoder::encode(&packet).unwrap().as_slice(),
+                subscriber,
+            );
+        }
+    }
+
     fn addr_control_transport_(&mut self) {
         match self.step_address() {
             "start" => self.input_queue.push(ControlMessage::ControlCommand(
@@ -242,5 +292,58 @@ impl OscNetHandler {
 
     fn addreq(&self, addr: String) -> bool {
         return self.matcher.match_address(&OscAddress::new(addr).unwrap());
+    }
+
+    fn notif_to_osc(&mut self, notification: Notification) -> Vec<OscMessage> {
+        // Helper function to macro generate osc messages with a single argument
+        fn osc_msg(addr: &str, arg: OscType) -> OscMessage {
+            return OscMessage {
+                addr: addr.to_string(),
+                args: vec![arg],
+            };
+        }
+
+        match notification {
+            Notification::CueChanged(idx, cue) => {
+                vec![
+                    osc_msg("/notification/cue/index", OscType::Int(idx as i32)),
+                    osc_msg(
+                        "/notification/cue/length",
+                        OscType::Int(cue.get_beats().len() as i32),
+                    ),
+                    osc_msg(
+                        "/notification/cue/ident",
+                        OscType::String(cue.metadata.human_ident),
+                    ),
+                    osc_msg("/notification/cue/name", OscType::String(cue.metadata.name)),
+                ]
+            }
+            Notification::BeatChanged(idx, beat) => {
+                vec![
+                    osc_msg(
+                        "/notification/transport/beat/index",
+                        OscType::Int(idx.try_into().unwrap_or(0)),
+                    ),
+                    osc_msg(
+                        "/notification/transport/beat/count",
+                        OscType::Int(beat.count.try_into().unwrap_or(0)),
+                    ),
+                    osc_msg(
+                        "/notification/transport/beat/bar",
+                        OscType::Int(beat.bar_number.try_into().unwrap_or(0)),
+                    ),
+                ]
+            }
+            //          running
+            //           {beat/, nextbeat/}
+            //              index
+            //              count
+            //              bar
+            //          timecode/
+            //              h
+            //              m
+            //              s
+            _ => vec![],
+        }
     }
 }

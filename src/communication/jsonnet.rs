@@ -130,7 +130,7 @@ impl CommunicationInterface for JsonNetHandler {
         for subscriber in &self.subscribers {
             if subscriber.message_kinds.contains(&notification.to_kind()) {
                 self.port.send_to(
-                    notification.clone(),
+                    serde_json::to_string(&notification).unwrap().as_bytes(),
                     SocketAddr::new(
                         IpAddr::from_str(&subscriber.address).unwrap(),
                         subscriber.port.parse().unwrap(),

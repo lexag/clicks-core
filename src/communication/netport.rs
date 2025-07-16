@@ -29,11 +29,8 @@ impl NetworkPort {
         }
     }
 
-    pub fn send_to(&mut self, notification: Notification, address: SocketAddr) {
-        match self.socket.send_to(
-            serde_json::to_string(&notification).unwrap().as_bytes(),
-            address,
-        ) {
+    pub fn send_to(&mut self, content: &[u8], address: SocketAddr) {
+        match self.socket.send_to(content, address) {
             Ok(amt) => {}
             Err(err) => {
                 logger::log(
