@@ -146,7 +146,7 @@ impl TimecodeSource {
                     _ => {}
                 }
             }
-            time_off_us += (self.cue.get_beat(i).unwrap().length * 1000) as u64;
+            time_off_us += self.cue.get_beat(i).unwrap().length as u64;
         }
         time.add_us(time_off_us);
         return time;

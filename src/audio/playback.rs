@@ -259,7 +259,7 @@ impl PlaybackDevice {
                     _ => {}
                 }
             }
-            time_off_us += (self.cue.get_beat(i).unwrap().length * 1000) as u64;
+            time_off_us += self.cue.get_beat(i).unwrap().length as u64;
         }
         // TODO: support multiple and resampled sample rates
         running_sample += time_off_us as i32 * 48 / 1000;
