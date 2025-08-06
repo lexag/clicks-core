@@ -2,7 +2,7 @@ use jack::{Client, Error, ProcessScope};
 
 use common::command::{CommandError, ControlCommand};
 
-use common::status::{AudioSourceStatus, ProcessStatus};
+use common::status::{AudioSourceState, CombinedStatus};
 use std::fmt::Debug;
 use std::ops::Div;
 
@@ -11,10 +11,10 @@ pub trait AudioSource: Send {
         &mut self,
         _c: &Client,
         _ps: &ProcessScope,
-        status: ProcessStatus,
+        status: CombinedStatus,
     ) -> Result<&[f32], Error>;
     fn command(&mut self, command: ControlCommand) -> Result<(), CommandError>;
-    fn get_status(&mut self, _c: &Client, _ps: &ProcessScope) -> AudioSourceStatus;
+    fn get_status(&mut self, _c: &Client, _ps: &ProcessScope) -> AudioSourceState;
 }
 
 pub struct SourceConfig {

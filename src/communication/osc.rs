@@ -343,41 +343,38 @@ impl OscNetHandler {
         }
 
         match notification {
-            Notification::CueChanged(idx, cue) => {
+            Notification::CueChanged(cue) => {
                 vec![
-                    osc_msg("/notification/cue/index", OscType::Int(idx as i32)),
+                    osc_msg("/notification/cue/index", OscType::Int(cue.cue_idx as i32)),
                     osc_msg(
                         "/notification/cue/length",
-                        OscType::Int(cue.get_beats().len() as i32),
+                        OscType::Int(cue.cue.get_beats().len() as i32),
                     ),
                     osc_msg(
                         "/notification/cue/ident",
-                        OscType::String(cue.metadata.human_ident),
+                        OscType::String(cue.cue.metadata.human_ident),
                     ),
-                    osc_msg("/notification/cue/name", OscType::String(cue.metadata.name)),
+                    osc_msg(
+                        "/notification/cue/name",
+                        OscType::String(cue.cue.metadata.name),
+                    ),
                 ]
             }
-            Notification::BeatChanged(idx, beat) => {
+            Notification::BeatChanged(state) => {
                 vec![
                     osc_msg(
                         "/notification/transport/beat/index",
-                        OscType::Int(idx.try_into().unwrap_or(0)),
+                        OscType::Int(state.beat_idx.try_into().unwrap_or(0)),
                     ),
                     osc_msg(
                         "/notification/transport/beat/count",
-                        OscType::Int(beat.count.try_into().unwrap_or(0)),
+                        OscType::Int(state.beat.count.try_into().unwrap_or(0)),
                     ),
                     osc_msg(
                         "/notification/transport/beat/bar",
-                        OscType::Int(beat.bar_number.try_into().unwrap_or(0)),
+                        OscType::Int(state.beat.bar_number.try_into().unwrap_or(0)),
                     ),
                 ]
-            }
-            Notification::PlaystateChanged(playstate) => {
-                vec![osc_msg(
-                    "/notification/transport/running",
-                    OscType::Bool(playstate),
-                )]
             }
             //          running
             //           {beat/, nextbeat/}

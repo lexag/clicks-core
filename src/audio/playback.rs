@@ -7,7 +7,7 @@ use common::{
     command::ControlCommand,
     cue::{BeatEvent, Cue},
     show::Show,
-    status::{AudioSourceStatus, ProcessStatus},
+    status::{AudioSourceState, CombinedStatus},
 };
 use jack::{AudioOut, Client, ClientOptions, Control, ProcessHandler, ProcessScope};
 use std::{
@@ -268,13 +268,13 @@ pub struct PlaybackDevice {
     show_path: PathBuf,
     cue: Cue,
     active: bool,
-    status: ProcessStatus,
+    status: CombinedStatus,
 }
 
 impl PlaybackDevice {
     fn new(channel_idx: usize, show_path: PathBuf) -> PlaybackDevice {
         PlaybackDevice {
-            status: ProcessStatus::default(),
+            status: CombinedStatus::default(),
             channel_idx,
             current_sample: 0,
             current_clip: 0,
@@ -326,15 +326,15 @@ impl AudioSource for PlaybackDevice {
         &mut self,
         _c: &jack::Client,
         _ps: &jack::ProcessScope,
-        status: common::status::ProcessStatus,
+        status: common::status::CombinedStatus,
     ) -> Result<&[f32], jack::Error> {
         let num_samples = _ps.n_frames();
         //println!("{:?}", self);
         //println!("status: {:?}", status);
-        if status.running {
+        if status.transport.running {
             for event in self
                 .cue
-                .get_beat(status.next_beat_idx)
+                .get_beat(status.beat_state().next_beat_idx)
                 .unwrap_or_default()
                 .events
             {
@@ -350,7 +350,8 @@ impl AudioSource for PlaybackDevice {
                         // if this cycle will run over the edge into next beat, we start playback
                         // slightly before start of audio clip, so it aligns on the downbeat
                         // sample.
-                        let samples_to_next_beat: u32 = (status.us_to_next_beat / 10) as u32
+                        let samples_to_next_beat: u32 = (status.transport.us_to_next_beat / 10)
+                            as u32
                             * (_c.sample_rate() / 100) as u32
                             / 1000;
                         if samples_to_next_beat < num_samples {
@@ -416,7 +417,7 @@ impl AudioSource for PlaybackDevice {
                 (self.current_clip, self.active, self.current_sample) =
                     self.calculate_time_at_beat(beat_idx);
                 // TODO: Support multiple and mixed sample rates
-                self.current_sample -= (self.status.us_to_next_beat as i32) * 48 / 1000
+                self.current_sample -= (self.status.transport.us_to_next_beat as i32) * 48 / 1000
             }
             _ => {}
         }
@@ -427,8 +428,8 @@ impl AudioSource for PlaybackDevice {
         &mut self,
         _c: &jack::Client,
         _ps: &jack::ProcessScope,
-    ) -> common::status::AudioSourceStatus {
-        AudioSourceStatus::PlaybackStatus(common::status::PlaybackStatus {
+    ) -> common::status::AudioSourceState {
+        AudioSourceState::PlaybackStatus(common::status::PlaybackState {
             clips: self.clips.iter().map(|c| c.read_index()).collect(),
             clip_idx: self.current_clip,
             current_sample: self.current_sample,

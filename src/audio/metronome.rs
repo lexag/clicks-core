@@ -1,11 +1,11 @@
-use common::status::BeatStatus;
+use common::status::{BeatState, CombinedStatus};
 use jack::{Client, ProcessScope};
 
 use crate::audio;
 use common::command::{CommandError, ControlCommand};
 use common::{
     cue::{BeatEvent, Cue},
-    status::{AudioSourceStatus, ProcessStatus},
+    status::AudioSourceState,
 };
 
 struct MetronomeClick {
@@ -20,7 +20,8 @@ pub struct Metronome {
     cue: Cue,
     beat_idx: usize,
     next_beat_idx: usize,
-    status: ProcessStatus,
+    us_to_next: usize,
+    status: CombinedStatus,
 }
 
 impl Default for Metronome {
@@ -41,7 +42,8 @@ impl Default for Metronome {
             click_buffers: [[0f32; 96000]; 2],
             beat_idx: 0,
             next_beat_idx: 1,
-            status: ProcessStatus::default(),
+            us_to_next: 0,
+            status: CombinedStatus::default(),
         }
     }
 }
@@ -74,10 +76,14 @@ impl Metronome {
             _ => {}
         }
     }
+
+    pub fn us_to_next_beat(&self) -> usize {
+        return self.us_to_next;
+    }
 }
 
 impl audio::source::AudioSource for Metronome {
-    fn get_status(&mut self, c: &Client, _ps: &ProcessScope) -> AudioSourceStatus {
+    fn get_status(&mut self, c: &Client, _ps: &ProcessScope) -> AudioSourceState {
         let t_us = c.frames_to_time(c.frame_time());
         let next_schd_t_us: u64;
         if let Some(beat) = self.cue.get_beat(self.beat_idx) {
@@ -85,24 +91,25 @@ impl audio::source::AudioSource for Metronome {
         } else {
             next_schd_t_us = u64::MAX
         };
-        return AudioSourceStatus::BeatStatus(BeatStatus {
+        self.us_to_next = if next_schd_t_us > t_us && next_schd_t_us < u64::MAX / 2 {
+            (next_schd_t_us - t_us) as usize
+        } else {
+            0
+        };
+        return AudioSourceState::BeatStatus(BeatState {
+            beat: self.cue.get_beat(self.beat_idx).unwrap_or_default(),
             beat_idx: self.beat_idx,
             next_beat_idx: self.next_beat_idx,
-            us_to_next: if next_schd_t_us > t_us && next_schd_t_us < u64::MAX / 2 {
-                (next_schd_t_us - t_us) as usize
-            } else {
-                0
-            },
         });
     }
     fn send_buffer(
         &mut self,
         c: &Client,
         ps: &ProcessScope,
-        status: ProcessStatus,
+        status: CombinedStatus,
     ) -> Result<&[f32], jack::Error> {
         self.status = status.clone();
-        if status.running {
+        if status.transport.running {
             let mut beat = self.cue.get_beat(self.beat_idx).unwrap_or_default();
             let next_beat = match self.cue.get_beat(self.next_beat_idx) {
                 None => {

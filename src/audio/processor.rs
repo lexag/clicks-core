@@ -12,7 +12,7 @@ use crate::{
 use common::{
     command::ControlCommand,
     network::{Heartbeat, JACKStatus},
-    status::{AudioSourceStatus, CombinedStatus, Notification, ProcessStatus},
+    status::{AudioSourceState, CombinedStatus, Notification, NotificationKind},
 };
 
 pub struct AudioProcessor {
@@ -29,36 +29,44 @@ impl AudioProcessor {
         ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
         cbnet: CrossbeamNetwork,
     ) -> AudioProcessor {
-        AudioProcessor {
+        let mut ap = AudioProcessor {
             ports,
             sources,
             cbnet,
             status: CombinedStatus::default(),
             status_changed_flag: false,
-        }
+        };
+        ap.status.sources = vec![AudioSourceState::None; 32];
+        ap
     }
 
     fn send_all_status(&self) {
-        let _ = self.cbnet.notify(Notification::CueChanged(
-            self.status.process_status.cue_idx,
-            self.status.cue.clone(),
-        ));
+        let _ = self
+            .cbnet
+            .notify(Notification::CueChanged(self.status.cue.clone()));
         let _ = self
             .cbnet
             .notify(Notification::ShowChanged(self.status.show.lightweight()));
-        let _ = self.cbnet.notify(Notification::BeatChanged(
-            self.status.process_status.beat_idx,
-            self.status
-                .cue
-                .get_beat(self.status.process_status.beat_idx)
-                .unwrap_or_default(),
-        ));
+        let _ = self
+            .cbnet
+            .notify(Notification::BeatChanged(self.status.beat_state().clone()));
         let _ = self.cbnet.notify(Notification::TransportChanged(
-            self.status.process_status.clone(),
+            self.status.transport.clone(),
         ));
-        let _ = self.cbnet.notify(Notification::PlaystateChanged(
-            self.status.process_status.running,
-        ));
+    }
+
+    fn notify_push(&mut self, notification_kind: NotificationKind) {
+        self.cbnet.notify(match notification_kind {
+            NotificationKind::TransportChanged => {
+                Notification::TransportChanged(self.status.transport.clone())
+            }
+            NotificationKind::BeatChanged => Notification::BeatChanged(self.status.beat_state()),
+            NotificationKind::CueChanged => Notification::CueChanged(self.status.cue.clone()),
+            NotificationKind::ShowChanged => Notification::ShowChanged(self.status.show.clone()),
+            _ => {
+                return;
+            }
+        });
     }
 
     fn handle_command(&mut self, command: ControlCommand) {
@@ -70,52 +78,52 @@ impl AudioProcessor {
         match command.clone() {
             ControlCommand::DumpStatus => self.send_all_status(),
             ControlCommand::TransportStart => {
-                self.status.process_status.running = true;
-                self.cbnet.notify(Notification::PlaystateChanged(true));
+                self.status.transport.running = true;
+                self.notify_push(NotificationKind::TransportChanged);
             }
             ControlCommand::TransportStop => {
-                self.status.process_status.running = false;
-                self.cbnet.notify(Notification::PlaystateChanged(false));
+                self.status.transport.running = false;
+                self.notify_push(NotificationKind::TransportChanged);
+            }
+
+            ControlCommand::TransportSeekBeat(..) | ControlCommand::TransportJumpBeat(..) => {
+                self.status_changed_flag = true;
             }
 
             ControlCommand::LoadShow(show) => {
                 self.status.show = show;
                 self.cbnet.command(ControlCommand::LoadCueByIndex(0));
-                self.cbnet
-                    .notify(Notification::ShowChanged(self.status.show.lightweight()));
+                self.notify_push(NotificationKind::ShowChanged);
             }
 
             ControlCommand::LoadCue(cue) => {
-                self.status.process_status.running = false;
-                self.status.cue = cue.clone();
+                self.status.transport.running = false;
+                self.status.cue.cue = cue.clone();
 
                 self.cbnet.command(ControlCommand::TransportStop);
                 self.cbnet.command(ControlCommand::TransportZero);
-                self.cbnet.notify(Notification::CueChanged(
-                    self.status.process_status.cue_idx,
-                    self.status.cue.clone(),
-                ));
+                self.notify_push(NotificationKind::CueChanged);
             }
             ControlCommand::LoadCueFromSelfIndex => {
                 let _ = self.cbnet.command(ControlCommand::LoadCue(
-                    self.status.show.cues[self.status.process_status.cue_idx].clone(),
+                    self.status.show.cues[self.status.cue.cue_idx].clone(),
                 ));
             }
             ControlCommand::LoadCueByIndex(idx) => {
                 if idx < self.status.show.cues.len() {
-                    self.status.process_status.cue_idx = idx;
+                    self.status.cue.cue_idx = idx;
                     let _ = self.cbnet.command(ControlCommand::LoadCueFromSelfIndex);
                 }
             }
             ControlCommand::LoadPreviousCue => {
-                if self.status.process_status.cue_idx > 0 {
-                    self.status.process_status.cue_idx -= 1;
+                if self.status.cue.cue_idx > 0 {
+                    self.status.cue.cue_idx -= 1;
                     let _ = self.cbnet.command(ControlCommand::LoadCueFromSelfIndex);
                 }
             }
             ControlCommand::LoadNextCue => {
-                if self.status.process_status.cue_idx + 1 < self.status.show.cues.len() {
-                    self.status.process_status.cue_idx += 1;
+                if self.status.cue.cue_idx + 1 < self.status.show.cues.len() {
+                    self.status.cue.cue_idx += 1;
                     let _ = self.cbnet.command(ControlCommand::LoadCueFromSelfIndex);
                 }
             }
@@ -132,45 +140,19 @@ impl AudioProcessor {
         for source in &mut self.sources {
             let _ = source.source_device.command(command.clone());
         }
-
-        match command {
-            ControlCommand::TransportZero
-            | ControlCommand::TransportStop
-            | ControlCommand::TransportStart
-            | ControlCommand::TransportSeekBeat(..)
-            | ControlCommand::TransportJumpBeat(..) => {
-                self.status_changed_flag = true;
-            }
-            _ => {}
-        }
     }
 
     fn compile_child_statuses(&mut self, c: &Client, ps: &ProcessScope) {
-        let mut source_statuses: Vec<AudioSourceStatus> = vec![];
         for (i, source) in self.sources.iter_mut().enumerate() {
             let status = source.source_device.get_status(c, ps);
-            match status {
-                AudioSourceStatus::BeatStatus(ref status) => {
-                    self.status.process_status.beat_idx = status.beat_idx;
-                    self.status.process_status.us_to_next_beat = status.us_to_next;
-                    self.status.process_status.next_beat_idx = status.next_beat_idx;
-                }
-                AudioSourceStatus::TimeStatus(ref status) => {
-                    self.status.process_status.time = status.clone();
-                }
-                _ => {}
-            }
-            source_statuses.push(status.clone());
+            self.status.sources[i] = status;
         }
-        self.status.process_status.sources = source_statuses;
     }
 
     // Get audio buffer from source[idx] and copy it to the JACK client output buffer.
     fn process_child(&mut self, idx: usize, c: &Client, ps: &ProcessScope) -> Control {
         let source = &mut self.sources[idx];
-        let res = source
-            .source_device
-            .send_buffer(c, ps, self.status.process_status.clone());
+        let res = source.source_device.send_buffer(c, ps, self.status.clone());
         if let Ok(buf) = res {
             let mut out_buf = self.ports.0[idx].as_mut_slice(ps);
             out_buf.clone_from_slice(buf);
@@ -212,10 +194,10 @@ impl ProcessHandler for AudioProcessor {
         self.compile_child_statuses(c, ps);
 
         // If cue runs out: stop and go to next
-        if self.status.process_status.next_beat_idx >= self.status.cue.get_beats().len()
-            && self.status.process_status.running
+        if self.status.beat_state().beat_idx >= self.status.cue.cue.get_beats().len()
+            && self.status.transport.running
         {
-            self.status.process_status.running = false;
+            self.status.transport.running = false;
             self.cbnet.command(ControlCommand::TransportStop);
             self.cbnet.command(ControlCommand::LoadNextCue);
             self.cbnet.command(ControlCommand::TransportZero);
@@ -228,10 +210,8 @@ impl ProcessHandler for AudioProcessor {
             };
         }
 
-        if self.status.process_status.running || self.status_changed_flag {
-            let _ = self.cbnet.notify(Notification::TransportChanged(
-                self.status.process_status.clone(),
-            ));
+        if self.status.transport.running || self.status_changed_flag {
+            self.notify_push(NotificationKind::TransportChanged);
             self.status_changed_flag = false;
         }
 

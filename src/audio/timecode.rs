@@ -3,7 +3,7 @@ use crate::audio;
 use common::{
     command::{CommandError, ControlCommand},
     cue::{Beat, BeatEvent, Cue},
-    status::{AudioSourceStatus, CombinedStatus, ProcessStatus},
+    status::{AudioSourceState, CombinedStatus},
     timecode::TimecodeInstant,
 };
 
@@ -17,7 +17,7 @@ pub struct TimecodeSource {
     frame_buffer: [f32; 8192],
     cue: Cue,
     current_time: TimecodeInstant,
-    status: ProcessStatus,
+    status: CombinedStatus,
 }
 
 impl Default for TimecodeSource {
@@ -32,7 +32,7 @@ impl Default for TimecodeSource {
             frame_buffer: [0.0f32; 8192],
             cue: Cue::empty(),
             current_time: TimecodeInstant::new(25),
-            status: ProcessStatus::default(),
+            status: CombinedStatus::default(),
         }
     }
 }
@@ -170,8 +170,8 @@ impl TimecodeSource {
 }
 
 impl audio::source::AudioSource for TimecodeSource {
-    fn get_status(&mut self, _c: &jack::Client, _ps: &jack::ProcessScope) -> AudioSourceStatus {
-        return AudioSourceStatus::TimeStatus(self.current_time.clone());
+    fn get_status(&mut self, _c: &jack::Client, _ps: &jack::ProcessScope) -> AudioSourceState {
+        return AudioSourceState::TimeStatus(self.current_time.clone());
     }
     fn command(&mut self, command: ControlCommand) -> Result<(), CommandError> {
         match command {
@@ -200,7 +200,8 @@ impl audio::source::AudioSource for TimecodeSource {
             }
             ControlCommand::TransportSeekBeat(beat_idx) => {
                 self.current_time = self.calculate_time_at_beat(beat_idx);
-                self.current_time.sub_us(self.status.us_to_next_beat as u64)
+                self.current_time
+                    .sub_us(self.status.transport.us_to_next_beat as u64)
             }
             ControlCommand::LoadCue(cue) => self.cue = cue.clone(),
             _ => {}
@@ -212,7 +213,7 @@ impl audio::source::AudioSource for TimecodeSource {
         &mut self,
         _c: &jack::Client,
         _ps: &jack::ProcessScope,
-        status: ProcessStatus,
+        status: CombinedStatus,
     ) -> Result<&[f32], jack::Error> {
         let sample_rate = _c.sample_rate() as u32;
         let last_cycle_frame = self.current_time.clone();
@@ -225,7 +226,7 @@ impl audio::source::AudioSource for TimecodeSource {
         }
         for event in self
             .cue
-            .get_beat(status.next_beat_idx)
+            .get_beat(status.beat_state().next_beat_idx)
             .unwrap_or(Beat::empty())
             .events
         {
@@ -237,7 +238,7 @@ impl audio::source::AudioSource for TimecodeSource {
                     // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
                     // frame starts up to 1 whole cycle too early, but it is negligible, as the
                     // normal accuracy is only 1/fps (>33ms)
-                    if (status.us_to_next_beat as u32)
+                    if (status.transport.us_to_next_beat as u32)
                         < (_ps.n_frames() as u32 * 1000000) / sample_rate
                     {
                         self.active = true;
@@ -255,7 +256,7 @@ impl audio::source::AudioSource for TimecodeSource {
             }
         }
 
-        if status.running && self.active {
+        if status.transport.running && self.active {
             // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
             let samples_per_frame: usize = sample_rate as usize / self.frame_rate as usize;
             let samples_per_bit: usize = samples_per_frame / 80;
