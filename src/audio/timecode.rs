@@ -64,14 +64,30 @@ impl TimecodeSource {
     }
 
     fn generate_smpte_frame_bits(&self, user_bits: u32) -> u128 {
-        let h0: u128 = (self.current_time.h % 10).try_into().unwrap();
-        let h1: u128 = (self.current_time.h / 10).try_into().unwrap();
-        let m0: u128 = (self.current_time.m % 10).try_into().unwrap();
-        let m1: u128 = (self.current_time.m / 10).try_into().unwrap();
-        let s0: u128 = (self.current_time.s % 10).try_into().unwrap();
-        let s1: u128 = (self.current_time.s / 10).try_into().unwrap();
-        let f0: u128 = (self.current_time.f % 10).try_into().unwrap();
-        let f1: u128 = (self.current_time.f / 10).try_into().unwrap();
+        let h0: u128 = (self.current_time.h.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let h1: u128 = (self.current_time.h.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let m0: u128 = (self.current_time.m.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let m1: u128 = (self.current_time.m.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let s0: u128 = (self.current_time.s.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let s1: u128 = (self.current_time.s.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let f0: u128 = (self.current_time.f.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let f1: u128 = (self.current_time.f.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
         let user_bits: u32 = 0;
 
         let mut t_enc: u128 = 0;
@@ -137,7 +153,7 @@ impl TimecodeSource {
         };
         let mut time_off_us = 0_u64;
         for i in 0..beat_idx {
-            for event in self.cue.get_beat(i).unwrap().events {
+            for event in self.cue.get_beat(i).unwrap_or_default().events {
                 match event {
                     BeatEvent::TimecodeEvent { h, m, s, f } => {
                         time.set_time(h, m, s, f);
@@ -146,21 +162,11 @@ impl TimecodeSource {
                     _ => {}
                 }
             }
-            time_off_us += self.cue.get_beat(i).unwrap().length as u64;
+            time_off_us += self.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         time.add_us(time_off_us);
         return time;
     }
-
-    //fn extract_time_status(&self, t_us: u128) -> AudioSourceStatus {
-    //    let h: usize = ((t_us >> 16) / 3600).try_into().unwrap();
-    //    let m: usize = ((t_us >> 16) / 60 % 60).try_into().unwrap();
-    //    let s: usize = ((t_us >> 16) % 60).try_into().unwrap();
-    //    let f: usize = (((t_us * self.frame_rate as u128) >> 16) % self.frame_rate as u128)
-    //        .try_into()
-    //        .unwrap();
-    //    return AudioSourceStatus::TimeStatus { h, m, s, f };
-    //}
 }
 
 impl audio::source::AudioSource for TimecodeSource {

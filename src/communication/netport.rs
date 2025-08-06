@@ -15,8 +15,12 @@ impl NetworkPort {
     pub fn new(port: usize) -> Self {
         let s = Self {
             buffer: [0; BUFFER_SIZE],
-            socket: UdpSocket::bind(format!("{}:{}", local_ip().unwrap().to_string(), port))
-                .expect("couldn't open local port"),
+            socket: UdpSocket::bind(format!(
+                "{}:{}",
+                local_ip().expect("Couldn't find IP").to_string(),
+                port
+            ))
+            .expect("couldn't open local port"),
         };
         let _ = s.socket.set_nonblocking(true);
         return s;

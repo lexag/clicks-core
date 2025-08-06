@@ -43,12 +43,15 @@ impl CommunicationInterface for JsonNetHandler {
                 }
             }
             let msg: ControlMessage =
-                match serde_json::from_str(std::str::from_utf8(&buf[..amt]).unwrap()) {
+                match serde_json::from_str(match std::str::from_utf8(&buf[..amt]) {
+                    Ok(val) => val,
+                    Err(err) => panic!("failed conversion! {err}",),
+                }) {
                     Ok(msg) => msg,
                     Err(err) => {
                         panic!(
                             "failed parse! {err} \n {}",
-                            std::str::from_utf8(&buf[..amt]).unwrap()
+                            std::str::from_utf8(&buf[..amt]).unwrap_or_default()
                         );
                     }
                 };
@@ -121,7 +124,9 @@ impl CommunicationInterface for JsonNetHandler {
             .into_iter()
             .filter(|sub| {
                 Utc::now()
-                    .signed_duration_since(DateTime::parse_from_rfc3339(&sub.last_contact).unwrap())
+                    .signed_duration_since(
+                        DateTime::parse_from_rfc3339(&sub.last_contact).unwrap_or_default(),
+                    )
                     .num_minutes()
                     < 15
             })
@@ -130,10 +135,16 @@ impl CommunicationInterface for JsonNetHandler {
         for subscriber in &self.subscribers {
             if subscriber.message_kinds.contains(&notification.to_kind()) {
                 self.port.send_to(
-                    serde_json::to_string(&notification).unwrap().as_bytes(),
+                    serde_json::to_string(&notification)
+                        .expect("notification has trivial derived conversion")
+                        .as_bytes(),
                     SocketAddr::new(
-                        IpAddr::from_str(&subscriber.address).unwrap(),
-                        subscriber.port.parse().unwrap(),
+                        IpAddr::from_str(&subscriber.address)
+                            .expect("all subscriber addresses are santizied earlier"),
+                        subscriber
+                            .port
+                            .parse()
+                            .expect("all subscriber ports are sanitized earlier"),
                     ),
                 );
             }

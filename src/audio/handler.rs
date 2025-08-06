@@ -53,9 +53,17 @@ impl AudioHandler {
         ports.1 = self.collect_system_ports(&client);
 
         let processor = AudioProcessor::new(sources, ports, self.cbnet.clone());
-        let ac = client
-            .activate_async(JACKNotificationHandler, processor)
-            .unwrap();
+        let ac = match client.activate_async(JACKNotificationHandler, processor) {
+            Ok(val) => val,
+            Err(err) => {
+                logger::log(
+                    format!("Error starting audio client: {err}"),
+                    common::config::LogContext::AudioHandler,
+                    common::config::LogKind::Error,
+                );
+                return;
+            }
+        };
         self.client = Some(ac);
     }
 
@@ -64,7 +72,11 @@ impl AudioHandler {
             return (vec![], vec![]);
         }
         let mut ports: (Vec<Port<Unowned>>, Vec<Port<Unowned>>) = (vec![], vec![]);
-        let client = self.client.as_ref().unwrap().as_client();
+        let client = self
+            .client
+            .as_ref()
+            .expect("Client is none is handled.")
+            .as_client();
         let mut i_ports = client.ports(
             Some(&self.config.client.name),
             Some("32 bit float mono audio"),
@@ -77,7 +89,11 @@ impl AudioHandler {
         });
         ports.0 = i_ports
             .iter()
-            .map(|name| client.port_by_name(name).unwrap())
+            .map(|name| {
+                client
+                    .port_by_name(name)
+                    .expect("Port names are unexposed and should never be incorrect.")
+            })
             .collect();
 
         let mut o_ports = client.ports(
@@ -92,7 +108,11 @@ impl AudioHandler {
         });
         ports.1 = o_ports
             .iter()
-            .map(|name| client.port_by_name(name).unwrap())
+            .map(|name| {
+                client
+                    .port_by_name(name)
+                    .expect("Port names are unexposed and should never be incorrect.")
+            })
             .collect();
 
         return ports;
@@ -111,7 +131,11 @@ impl AudioHandler {
                     .enumerate()
                     .map(|(b_idx, b_port)| {
                         if a_port
-                            .is_connected_to(&b_port.name().unwrap())
+                            .is_connected_to(
+                                &b_port.name().expect(
+                                    "Port names are unexposed and should never be incorrect.",
+                                ),
+                            )
                             .unwrap_or_default()
                         {
                             (a_idx, b_idx)
@@ -130,71 +154,35 @@ impl AudioHandler {
         let ports = self.get_ports();
         let p_from = ports.0[from].clone();
         let p_to = ports.1[to].clone();
+        let mut client = match &self.client {
+            Some(val) => val.as_client(),
+            None => return false,
+        };
         let res = if connect {
-            self.client
-                .as_mut()
-                .unwrap()
-                .as_client()
-                .connect_ports(&p_from, &p_to)
+            client.connect_ports(&p_from, &p_to)
         } else {
-            self.client
-                .as_mut()
-                .unwrap()
-                .as_client()
-                .disconnect_ports(&p_from, &p_to)
+            client.disconnect_ports(&p_from, &p_to)
         };
 
-        if let Ok(_) = res {
-            logger::log(
-                format!("Set port [{from}] -> [{to}] to {connect}"),
-                logger::LogContext::AudioHandler,
-                logger::LogKind::Note,
-            );
+        match res {
+            Ok(val) => {
+                logger::log(
+                    format!("Set port [{from}] -> [{to}] to {connect}"),
+                    logger::LogContext::AudioHandler,
+                    logger::LogKind::Note,
+                );
 
-            return true;
-        }
-
-        match res.unwrap_err() {
-            Error::PortConnectionError {
-                source,
-                destination,
-                code_or_message,
-            } => {
-                logger::log(
-                    format!(
-                        "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. {code_or_message}"
-                    ),
-                    logger::LogContext::AudioHandler,
-                    logger::LogKind::Error,
-                );
+                return true;
             }
-            Error::PortAlreadyConnected(source, destination) => {
+            Err(err) => {
                 logger::log(
-                    format!(
-                        "JACK Connection Error occured attempting to connect [{source}] to [{destination}]. Ports are already connected."
-                    ),
+                    format!("JACK Connection Error: {err}"),
                     logger::LogContext::AudioHandler,
                     logger::LogKind::Error,
                 );
-            }
-            Error::PortDisconnectionError => {
-                logger::log(
-                    format!(
-                        "JACK Disconnection Error occured attempting to connect port #{from} to #{to}."
-                    ),
-                    logger::LogContext::AudioHandler,
-                    logger::LogKind::Error,
-                );
-            }
-            _ => {
-                logger::log(
-                    format!("Unhandled JACK error connecting [{from}] to [{to}]"),
-                    logger::LogContext::AudioHandler,
-                    logger::LogKind::Error,
-                );
+                return false;
             }
         }
-        return false;
     }
 
     pub fn get_jack_status(&mut self) -> JACKStatus {
@@ -202,7 +190,10 @@ impl AudioHandler {
         self.jack_status.available_devices = self.get_hw_devices();
 
         if self.jack_status.running {
-            let client = self.client.as_ref().unwrap().as_client();
+            let client = match &self.client {
+                Some(val) => val.as_client(),
+                None => return self.jack_status.clone(),
+            };
             self.jack_status.io_size = (self.get_ports().0.len(), self.get_ports().1.len());
             self.jack_status.buffer_size = client.buffer_size() as usize;
             self.jack_status.sample_rate = client.sample_rate();
@@ -215,22 +206,23 @@ impl AudioHandler {
     }
 
     pub fn shutdown(&mut self) {
-        if self.jack_server_process.is_none() {
-            return;
-        }
-        &self.jack_server_process.as_mut().unwrap().kill();
+        match self.jack_server_process.as_mut() {
+            None => return,
+            Some(val) => val.kill(),
+        };
     }
 
     pub fn start_server(&mut self) {
-        self.jack_server_process = Some(
-            std::process::Command::new("jackd")
-                .arg("-R")
-                .args(["-d", "alsa"])
-                .args(["-d", &self.config.server.device_id])
-                .args(["-r", &self.config.server.sample_rate.to_string()])
-                .spawn()
-                .unwrap(),
-        );
+        self.jack_server_process = match std::process::Command::new("jackd")
+            .arg("-R")
+            .args(["-d", "alsa"])
+            .args(["-d", &self.config.server.device_id])
+            .args(["-r", &self.config.server.sample_rate.to_string()])
+            .spawn()
+        {
+            Ok(val) => Some(val),
+            Err(err) => None,
+        };
     }
 
     pub fn start_client(&mut self) -> Client {
@@ -285,7 +277,11 @@ impl AudioHandler {
         );
         return ports
             .iter()
-            .map(|name| client.port_by_name(name).unwrap())
+            .map(|name| {
+                client
+                    .port_by_name(name)
+                    .expect("Port names are unexposed and should always be right")
+            })
             .collect();
     }
 
@@ -315,9 +311,9 @@ impl AudioHandler {
     }
 
     pub fn get_cpu_use(&self) -> f32 {
-        if self.client.is_none() {
-            return 0.0;
+        match &self.client {
+            Some(val) => val.as_client().cpu_load(),
+            None => 0.0,
         }
-        self.client.as_ref().unwrap().as_client().cpu_load()
     }
 }

@@ -104,11 +104,12 @@ impl audio::source::AudioSource for Metronome {
         self.status = status.clone();
         if status.running {
             let mut beat = self.cue.get_beat(self.beat_idx).unwrap_or_default();
-            let res = self.cue.get_beat(self.next_beat_idx);
-            if res.is_none() {
-                return Ok(&[0f32; 2048][0..ps.n_frames() as usize]);
-            }
-            let next_beat = res.unwrap();
+            let next_beat = match self.cue.get_beat(self.next_beat_idx) {
+                None => {
+                    return Ok(&[0f32; 2048][0..ps.n_frames() as usize]);
+                }
+                Some(val) => val,
+            };
             let t_us = c.frames_to_time(c.frame_time());
             let next_schd_t_us: u64 = self.last_beat_time + beat.length as u64;
 
