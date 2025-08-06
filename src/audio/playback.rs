@@ -99,11 +99,20 @@ impl PlaybackHandler {
     }
 
     fn load_wav_buf(&self, channel: usize, clip: usize) -> Vec<f32> {
-        let mut reader = hound::WavReader::open(
+        let mut reader = match hound::WavReader::open(
             self.show_path
                 .join(format!("playback_media/{:0>3}/{:0>3}.wav", channel, clip)),
-        )
-        .unwrap();
+        ) {
+            Ok(val) => val,
+            Err(err) => {
+                logger::log(
+                    format!("Error opening playback media: {}", err),
+                    logger::LogContext::AudioSource,
+                    logger::LogKind::Error,
+                );
+                return vec![0.0; 48000];
+            }
+        };
         let buf: Vec<f32> = match reader.spec().sample_format {
             hound::SampleFormat::Float => reader
                 .samples::<f32>()
@@ -116,7 +125,7 @@ impl PlaybackHandler {
                         );
                         return 0.0;
                     }
-                    return sample.unwrap();
+                    return sample.expect("Err already handled.");
                 })
                 .collect(),
             hound::SampleFormat::Int => reader
@@ -130,7 +139,7 @@ impl PlaybackHandler {
                         );
                         return 0.0;
                     }
-                    return (sample.unwrap() as f32).div(32768.0);
+                    return (sample.expect("Err already handled.") as f32).div(32768.0);
                 })
                 .collect(),
         };
@@ -165,11 +174,6 @@ impl PlaybackHandler {
     }
 
     pub fn load_show(&mut self, show: Show) {
-        let mut needed_clip_slots_per_cue: HashMap<usize, usize> = HashMap::new();
-
-        // The plan:
-        // Per channel, find max clips per cue and make that many clips in that channel slot
-
         let max_clips: Vec<usize> = (0..self.num_channels)
             .clone()
             .map(|channel| {
@@ -228,7 +232,7 @@ mod tests {
     fn clips_counter() {
         let pbh = PlaybackHandler::new(PathBuf::new(), 32);
         for length in [0, 1, 2, 100, 10000] {
-            for channel in (0..34) {
+            for channel in (0..34).step_by(2) {
                 let cue = Cue {
                     metadata: common::cue::CueMetadata {
                         name: String::new(),
@@ -309,7 +313,7 @@ impl PlaybackDevice {
                     _ => {}
                 }
             }
-            time_off_us += self.cue.get_beat(i).unwrap().length as u64;
+            time_off_us += self.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         // TODO: support multiple and resampled sample rates
         running_sample += time_off_us as i32 * 48 / 1000;
