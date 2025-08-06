@@ -321,65 +321,71 @@ impl PlaybackDevice {
 
 impl AudioSource for PlaybackDevice {
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
-        if ctx.transport.running {
-            for event in self
-                .cue
-                .get_beat(ctx.beat.next_beat_idx)
-                .unwrap_or_default()
-                .events
-            {
-                match event {
-                    BeatEvent::PlaybackEvent {
-                        channel_idx,
-                        clip_idx,
-                        sample,
-                    } => {
-                        if channel_idx != self.channel_idx {
-                            continue;
-                        }
-                        // if this cycle will run over the edge into next beat, we start playback
-                        // slightly before start of audio clip, so it aligns on the downbeat
-                        // sample.
-                        if ctx.will_overrun_frame() {
-                            self.active = true;
-                            self.current_sample = sample;
-                            for (i, clip) in self.clips.iter().enumerate() {
-                                if clip.read_index() == clip_idx {
-                                    self.current_clip = i;
-                                } else {
-                                    self.active = false;
-                                }
-                            }
-                        }
-                    }
-                    BeatEvent::PlaybackStopEvent { channel_idx } => {
-                        if channel_idx != self.channel_idx {
-                            continue;
-                        }
-                        self.active = false;
-                    }
-                    _ => {}
-                }
-            }
+        if !ctx.transport.running {
+            return Ok(&self.silence(ctx.frame_size));
+        }
+        let beat = self
+            .cue
+            .get_beat(ctx.beat.next_beat_idx)
+            .unwrap_or_default();
 
-            if self.active {
-                if self.current_sample < 0 {
-                    return Ok(&self.silence(ctx.frame_size));
+        // Handle possible playback events
+        for event in beat.events_filter(|e| {
+            matches!(e, BeatEvent::PlaybackEvent { .. })
+                || matches!(e, BeatEvent::PlaybackStopEvent { .. })
+        }) {
+            match event {
+                _ => {}
+                BeatEvent::PlaybackEvent {
+                    channel_idx,
+                    clip_idx,
+                    sample,
+                } => {
+                    if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {
+                        continue;
+                    }
+                    // if this cycle will run over the edge into next beat, we start playback
+                    // slightly before start of audio clip, so it aligns on the downbeat
+                    // sample.
+                    self.active = true;
+                    self.current_sample = sample;
+                    for (i, clip) in self.clips.iter().enumerate() {
+                        if clip.read_index() == clip_idx {
+                            self.current_clip = i;
+                        } else {
+                            self.active = false;
+                        }
+                    }
                 }
-                if self.current_sample + ctx.frame_size as i32
-                    > self.clips[self.current_clip].get_length() as i32
-                {
+                BeatEvent::PlaybackStopEvent { channel_idx } => {
+                    if channel_idx != self.channel_idx {
+                        continue;
+                    }
                     self.active = false;
-                    return Ok(&self.silence(ctx.frame_size));
                 }
-                let buf = self.clips[self.current_clip]
-                    .read_buffer_slice(self.current_sample as u32, ctx.frame_size);
-                self.current_sample += ctx.frame_size as i32;
-                return Ok(&buf[0..ctx.frame_size]);
             }
         }
-        return Ok(&self.silence(ctx.frame_size));
+
+        // If currently not playing or prerolling before playing, return silence
+        if !self.active || self.current_sample < 0 {
+            return Ok(&self.silence(ctx.frame_size));
+        }
+
+        // If about to run out of clip length, return silence and stop playback
+        if self.current_sample + ctx.frame_size as i32
+            > self.clips[self.current_clip].get_length() as i32
+        {
+            self.active = false;
+            return Ok(&self.silence(ctx.frame_size));
+        }
+
+        // All is well, return clip audio
+        let buf = self.clips[self.current_clip]
+            .read_buffer_slice(self.current_sample as u32, ctx.frame_size);
+        self.current_sample += ctx.frame_size as i32;
+        return Ok(&buf[0..ctx.frame_size]);
     }
+
     fn command(
         &mut self,
         ctx: &AudioSourceContext,
