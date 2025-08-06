@@ -340,10 +340,7 @@ impl AudioSource for PlaybackDevice {
                         // if this cycle will run over the edge into next beat, we start playback
                         // slightly before start of audio clip, so it aligns on the downbeat
                         // sample.
-                        let samples_to_next_beat: u32 = (ctx.transport.us_to_next_beat / 10) as u32
-                            * (ctx.sample_rate / 100) as u32
-                            / 1000;
-                        if samples_to_next_beat < ctx.frame_size as u32 {
+                        if ctx.will_overrun_frame() {
                             self.active = true;
                             self.current_sample = sample;
                             for (i, clip) in self.clips.iter().enumerate() {

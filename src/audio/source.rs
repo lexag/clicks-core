@@ -15,6 +15,16 @@ pub struct AudioSourceContext {
     pub transport: TransportState,
 }
 
+impl AudioSourceContext {
+    pub fn samples_to_next_beat(&self) -> usize {
+        (self.transport.us_to_next_beat / 10) * (self.sample_rate / 100) / 1000
+    }
+
+    pub fn will_overrun_frame(&self) -> bool {
+        self.samples_to_next_beat() < self.frame_size
+    }
+}
+
 pub trait AudioSource: Send {
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], Error>;
     fn command(

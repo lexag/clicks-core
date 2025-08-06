@@ -232,9 +232,7 @@ impl audio::source::AudioSource for TimecodeSource {
                     // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
                     // frame starts up to 1 whole cycle too early, but it is negligible, as the
                     // normal accuracy is only 1/fps (>33ms)
-                    if (ctx.transport.us_to_next_beat as u32)
-                        < (ctx.frame_size as u32 * 1000000) / ctx.sample_rate as u32
-                    {
+                    if ctx.will_overrun_frame() {
                         self.active = true;
                         self.current_time = TimecodeInstant {
                             frame_rate: self.frame_rate,
