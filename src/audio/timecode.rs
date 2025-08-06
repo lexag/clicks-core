@@ -152,12 +152,9 @@ impl TimecodeSource {
         let mut time_off_us = 0_u64;
         for i in 0..beat_idx {
             for event in self.cue.get_beat(i).unwrap_or_default().events {
-                match event {
-                    BeatEvent::TimecodeEvent { h, m, s, f } => {
-                        time.set_time(h, m, s, f);
-                        time_off_us = 0;
-                    }
-                    _ => {}
+                if let BeatEvent::TimecodeEvent { h, m, s, f } = event {
+                    time.set_time(h, m, s, f);
+                    time_off_us = 0;
                 }
             }
             time_off_us += self.cue.get_beat(i).unwrap_or_default().length as u64;
@@ -222,58 +219,56 @@ impl audio::source::AudioSource for TimecodeSource {
             .cue
             .get_beat(ctx.beat.next_beat_idx)
             .unwrap_or(Beat::empty())
-            .events
+            .events_filter(|e| matches!(e, BeatEvent::TimecodeEvent { .. }))
         {
-            match event {
-                BeatEvent::TimecodeEvent { h, m, s, f } => {
-                    // if this cycle will run over the edge into next beat, we set the new timecode
-                    // immediately AND restart the frame progress from 0. This is important, as
-                    // otherwise, the frame time would change mid-frame, and confusion follows.
-                    // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
-                    // frame starts up to 1 whole cycle too early, but it is negligible, as the
-                    // normal accuracy is only 1/fps (>33ms)
-                    if ctx.will_overrun_frame() {
-                        self.active = true;
-                        self.current_time = TimecodeInstant {
-                            frame_rate: self.frame_rate,
-                            h: h as i16,
-                            m: m as i16,
-                            s: s as i16,
-                            f: f as i16,
-                            frame_progress: 0,
-                        };
-                    }
+            if let BeatEvent::TimecodeEvent { h, m, s, f } = event {
+                // if this cycle will run over the edge into next beat, we set the new timecode
+                // immediately AND restart the frame progress from 0. This is important, as
+                // otherwise, the frame time would change mid-frame, and confusion follows.
+                // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
+                // frame starts up to 1 whole cycle too early, but it is negligible, as the
+                // normal accuracy is only 1/fps (>33ms)
+                if ctx.will_overrun_frame() {
+                    self.active = true;
+                    self.current_time = TimecodeInstant {
+                        frame_rate: self.frame_rate,
+                        h: h as i16,
+                        m: m as i16,
+                        s: s as i16,
+                        f: f as i16,
+                        frame_progress: 0,
+                    };
                 }
-                _ => {}
             }
         }
 
-        if ctx.transport.running && self.active {
-            // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-            let samples_per_frame: usize = ctx.sample_rate as usize / self.frame_rate as usize;
-            let samples_per_bit: usize = samples_per_frame / 80;
-
-            let subframe_sample =
-                self.current_time.frame_progress as u64 * samples_per_frame as u64 / 65536;
-
-            if last_cycle_frame != self.current_time {
-                self.frame_buffer.copy_within(
-                    samples_per_frame as usize..2 * samples_per_frame as usize,
-                    0,
-                );
-
-                // write next frame into next frame buffer
-                let next_frame_bits = self.generate_smpte_frame_bits(0x0);
-                let next_frame_buf = &self
-                    .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
-                    [0..samples_per_frame];
-                self.frame_buffer[samples_per_frame..2 * samples_per_frame]
-                    .copy_from_slice(&next_frame_buf);
-            }
-
-            return Ok(&self.frame_buffer
-                [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
+        if !ctx.transport.running || !self.active {
+            return Ok(&self.silence(ctx.frame_size));
         }
-        return Ok(&self.silence(ctx.frame_size));
+
+        // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
+        let samples_per_frame: usize = ctx.sample_rate as usize / self.frame_rate as usize;
+        let samples_per_bit: usize = samples_per_frame / 80;
+
+        let subframe_sample =
+            self.current_time.frame_progress as u64 * samples_per_frame as u64 / 65536;
+
+        if last_cycle_frame != self.current_time {
+            self.frame_buffer.copy_within(
+                samples_per_frame as usize..2 * samples_per_frame as usize,
+                0,
+            );
+
+            // write next frame into next frame buffer
+            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
+            let next_frame_buf = &self
+                .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
+                [0..samples_per_frame];
+            self.frame_buffer[samples_per_frame..2 * samples_per_frame]
+                .copy_from_slice(&next_frame_buf);
+        }
+
+        return Ok(&self.frame_buffer
+            [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
     }
 }
