@@ -5,20 +5,21 @@ use jack::{
 };
 
 use crate::{
-    audio::source::{AudioSource, SourceConfig},
+    audio::source::{AudioSource, AudioSourceContext, SourceConfig},
     logger, CrossbeamNetwork,
 };
 
 use common::{
     command::ControlCommand,
     network::{Heartbeat, JACKStatus},
-    status::{AudioSourceState, CombinedStatus, Notification, NotificationKind},
+    status::{AudioSourceState, BeatState, CombinedStatus, Notification, NotificationKind},
 };
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
     cbnet: CrossbeamNetwork,
     status: CombinedStatus,
+    ctx: AudioSourceContext,
     ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
     status_changed_flag: bool,
 }
@@ -33,6 +34,7 @@ impl AudioProcessor {
             ports,
             sources,
             cbnet,
+            ctx: AudioSourceContext::default(),
             status: CombinedStatus::default(),
             status_changed_flag: false,
         };
@@ -138,21 +140,21 @@ impl AudioProcessor {
         // Pass on commands to all children
         // to do source specific implementations
         for source in &mut self.sources {
-            let _ = source.source_device.command(command.clone());
+            let _ = source.source_device.command(&self.ctx, command.clone());
         }
     }
 
-    fn compile_child_statuses(&mut self, c: &Client, ps: &ProcessScope) {
+    fn compile_child_statuses(&mut self) {
         for (i, source) in self.sources.iter_mut().enumerate() {
-            let status = source.source_device.get_status(c, ps);
+            let status = source.source_device.get_status(&self.ctx);
             self.status.sources[i] = status;
         }
     }
 
     // Get audio buffer from source[idx] and copy it to the JACK client output buffer.
-    fn process_child(&mut self, idx: usize, c: &Client, ps: &ProcessScope) -> Control {
+    fn process_child(&mut self, idx: usize, ps: &ProcessScope) -> Control {
         let source = &mut self.sources[idx];
-        let res = source.source_device.send_buffer(c, ps, self.status.clone());
+        let res = source.source_device.send_buffer(&self.ctx);
         if let Ok(buf) = res {
             let mut out_buf = self.ports.0[idx].as_mut_slice(ps);
             out_buf.clone_from_slice(buf);
@@ -167,6 +169,16 @@ impl AudioProcessor {
                 logger::LogKind::Error,
             );
             return Control::Quit;
+        }
+    }
+
+    fn update_context(&mut self, c: &Client, ps: &ProcessScope) {
+        self.ctx = AudioSourceContext {
+            jack_time: c.time(),
+            frame_size: ps.n_frames() as usize,
+            sample_rate: c.sample_rate(),
+            beat: self.status.beat_state(),
+            transport: self.status.transport.clone(),
         }
     }
 }
@@ -189,9 +201,9 @@ impl ProcessHandler for AudioProcessor {
                 ),
             }
         }
-
+        self.update_context(c, ps);
         // Get status from all sources and compile onto self.status
-        self.compile_child_statuses(c, ps);
+        self.compile_child_statuses();
 
         // If cue runs out: stop and go to next
         if self.status.beat_state().beat_idx >= self.status.cue.cue.get_beats().len()
@@ -203,9 +215,10 @@ impl ProcessHandler for AudioProcessor {
             self.cbnet.command(ControlCommand::TransportZero);
         }
 
+        self.update_context(c, ps);
         // Get audio frame buffers from all children and play in correct port
         for i in 0..self.sources.len() {
-            if self.process_child(i, c, ps) == Control::Quit {
+            if self.process_child(i, ps) == Control::Quit {
                 return Control::Quit;
             };
         }

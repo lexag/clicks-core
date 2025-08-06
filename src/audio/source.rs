@@ -2,19 +2,31 @@ use jack::{Client, Error, ProcessScope};
 
 use common::command::{CommandError, ControlCommand};
 
-use common::status::{AudioSourceState, CombinedStatus};
+use common::status::{AudioSourceState, BeatState, CombinedStatus, TransportState};
 use std::fmt::Debug;
 use std::ops::Div;
 
+#[derive(Default)]
+pub struct AudioSourceContext {
+    pub jack_time: u64,
+    pub frame_size: usize,
+    pub sample_rate: usize,
+    pub beat: BeatState,
+    pub transport: TransportState,
+}
+
 pub trait AudioSource: Send {
-    fn send_buffer(
+    fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], Error>;
+    fn command(
         &mut self,
-        _c: &Client,
-        _ps: &ProcessScope,
-        status: CombinedStatus,
-    ) -> Result<&[f32], Error>;
-    fn command(&mut self, command: ControlCommand) -> Result<(), CommandError>;
-    fn get_status(&mut self, _c: &Client, _ps: &ProcessScope) -> AudioSourceState;
+        ctx: &AudioSourceContext,
+        command: ControlCommand,
+    ) -> Result<(), CommandError>;
+    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState;
+
+    fn silence(&self, length: usize) -> &[f32] {
+        &[0f32; 2048][0..length]
+    }
 }
 
 pub struct SourceConfig {

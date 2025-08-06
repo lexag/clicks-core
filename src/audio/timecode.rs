@@ -1,4 +1,4 @@
-use crate::audio;
+use crate::audio::{self, source::AudioSourceContext};
 
 use common::{
     command::{CommandError, ControlCommand},
@@ -17,7 +17,6 @@ pub struct TimecodeSource {
     frame_buffer: [f32; 8192],
     cue: Cue,
     current_time: TimecodeInstant,
-    status: CombinedStatus,
 }
 
 impl Default for TimecodeSource {
@@ -32,7 +31,6 @@ impl Default for TimecodeSource {
             frame_buffer: [0.0f32; 8192],
             cue: Cue::empty(),
             current_time: TimecodeInstant::new(25),
-            status: CombinedStatus::default(),
         }
     }
 }
@@ -170,10 +168,14 @@ impl TimecodeSource {
 }
 
 impl audio::source::AudioSource for TimecodeSource {
-    fn get_status(&mut self, _c: &jack::Client, _ps: &jack::ProcessScope) -> AudioSourceState {
+    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
         return AudioSourceState::TimeStatus(self.current_time.clone());
     }
-    fn command(&mut self, command: ControlCommand) -> Result<(), CommandError> {
+    fn command(
+        &mut self,
+        ctx: &AudioSourceContext,
+        command: ControlCommand,
+    ) -> Result<(), CommandError> {
         match command {
             ControlCommand::TransportZero => {
                 self.current_time.set_time(0, 0, 0, 0);
@@ -201,7 +203,7 @@ impl audio::source::AudioSource for TimecodeSource {
             ControlCommand::TransportSeekBeat(beat_idx) => {
                 self.current_time = self.calculate_time_at_beat(beat_idx);
                 self.current_time
-                    .sub_us(self.status.transport.us_to_next_beat as u64)
+                    .sub_us(ctx.transport.us_to_next_beat as u64)
             }
             ControlCommand::LoadCue(cue) => self.cue = cue.clone(),
             _ => {}
@@ -209,24 +211,16 @@ impl audio::source::AudioSource for TimecodeSource {
         return Ok(());
     }
 
-    fn send_buffer(
-        &mut self,
-        _c: &jack::Client,
-        _ps: &jack::ProcessScope,
-        status: CombinedStatus,
-    ) -> Result<&[f32], jack::Error> {
-        let sample_rate = _c.sample_rate() as u32;
+    fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         let last_cycle_frame = self.current_time.clone();
-        self.status = status.clone();
 
         if self.active {
-            self.current_time.add_progress(
-                (_ps.n_frames() * self.frame_rate as u32 * 65536 / sample_rate) as u16,
-            );
+            self.current_time
+                .add_progress((ctx.frame_size * self.frame_rate * 65536 / ctx.sample_rate) as u16);
         }
         for event in self
             .cue
-            .get_beat(status.beat_state().next_beat_idx)
+            .get_beat(ctx.beat.next_beat_idx)
             .unwrap_or(Beat::empty())
             .events
         {
@@ -238,8 +232,8 @@ impl audio::source::AudioSource for TimecodeSource {
                     // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
                     // frame starts up to 1 whole cycle too early, but it is negligible, as the
                     // normal accuracy is only 1/fps (>33ms)
-                    if (status.transport.us_to_next_beat as u32)
-                        < (_ps.n_frames() as u32 * 1000000) / sample_rate
+                    if (ctx.transport.us_to_next_beat as u32)
+                        < (ctx.frame_size as u32 * 1000000) / ctx.sample_rate as u32
                     {
                         self.active = true;
                         self.current_time = TimecodeInstant {
@@ -256,9 +250,9 @@ impl audio::source::AudioSource for TimecodeSource {
             }
         }
 
-        if status.transport.running && self.active {
+        if ctx.transport.running && self.active {
             // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-            let samples_per_frame: usize = sample_rate as usize / self.frame_rate as usize;
+            let samples_per_frame: usize = ctx.sample_rate as usize / self.frame_rate as usize;
             let samples_per_bit: usize = samples_per_frame / 80;
 
             let subframe_sample =
@@ -280,8 +274,8 @@ impl audio::source::AudioSource for TimecodeSource {
             }
 
             return Ok(&self.frame_buffer
-                [subframe_sample as usize..subframe_sample as usize + _ps.n_frames() as usize]);
+                [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
         }
-        return Ok(&[0f32; 2048][0.._ps.n_frames() as usize]);
+        return Ok(&self.silence(ctx.frame_size));
     }
 }
