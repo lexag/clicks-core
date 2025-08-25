@@ -7,12 +7,11 @@ use common::{
     command::ControlCommand,
     cue::{BeatEvent, Cue},
     show::Show,
-    status::{AudioSourceState, CombinedStatus},
+    status::AudioSourceState,
 };
-use jack::{AudioOut, Client, ClientOptions, Control, ProcessHandler, ProcessScope};
 use std::{
-    collections::HashMap, fmt::Debug, fs::File, num, ops::Div, path::PathBuf, str::FromStr,
-    sync::Arc, thread::current,
+    fmt::Debug, ops::Div, path::PathBuf,
+    sync::Arc,
 };
 
 const LOCAL_BUF_SIZE: usize = 48000;

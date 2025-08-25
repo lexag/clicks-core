@@ -1,6 +1,5 @@
-use crossbeam_channel::{Receiver, Sender};
 use jack::{
-    AudioIn, AudioOut, Client, Control, NotificationHandler, Port, PortFlags, ProcessHandler,
+    AudioOut, Client, Control, NotificationHandler, Port, ProcessHandler,
     ProcessScope, Unowned,
 };
 
@@ -11,8 +10,7 @@ use crate::{
 
 use common::{
     command::ControlCommand,
-    network::{Heartbeat, JACKStatus},
-    status::{AudioSourceState, BeatState, CombinedStatus, Notification, NotificationKind},
+    status::{AudioSourceState, CombinedStatus, Notification, NotificationKind},
 };
 
 pub struct AudioProcessor {
@@ -156,7 +154,7 @@ impl AudioProcessor {
         let source = &mut self.sources[idx];
         let res = source.source_device.send_buffer(&self.ctx);
         if let Ok(buf) = res {
-            let mut out_buf = self.ports.0[idx].as_mut_slice(ps);
+            let out_buf = self.ports.0[idx].as_mut_slice(ps);
             out_buf.clone_from_slice(buf);
             for i in 0..out_buf.len() {
                 out_buf[i] *= source.get_gain_mult().clone();

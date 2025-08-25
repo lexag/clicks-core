@@ -1,5 +1,5 @@
 use crate::logger;
-use common::config::{BootProgramOrder, SystemConfiguration};
+use common::config::SystemConfiguration;
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]

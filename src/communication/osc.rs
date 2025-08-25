@@ -1,13 +1,11 @@
 use crate::communication::{interface::CommunicationInterface, netport::NetworkPort};
-use crate::logger;
 use common::command::ControlCommand;
 use common::status::Notification;
-use common::{control::ControlMessage, network::SubscriberInfo};
-use jack::NotificationHandler;
+use common::control::ControlMessage;
 use rosc::address::{Matcher, OscAddress};
 use rosc::decoder::decode_udp;
 use rosc::{OscBundle, OscError, OscMessage, OscPacket, OscTime, OscType};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::SystemTime;
 
 // Valid control OSC addresses:

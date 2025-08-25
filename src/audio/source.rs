@@ -1,8 +1,8 @@
-use jack::{Client, Error, ProcessScope};
+use jack::Error;
 
 use common::command::{CommandError, ControlCommand};
 
-use common::status::{AudioSourceState, BeatState, CombinedStatus, TransportState};
+use common::status::{AudioSourceState, BeatState, TransportState};
 use std::fmt::Debug;
 use std::ops::Div;
 

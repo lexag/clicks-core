@@ -3,7 +3,7 @@ use crate::audio::{self, source::AudioSourceContext};
 use common::{
     command::{CommandError, ControlCommand},
     cue::{Beat, BeatEvent, Cue},
-    status::{AudioSourceState, CombinedStatus},
+    status::AudioSourceState,
     timecode::TimecodeInstant,
 };
 

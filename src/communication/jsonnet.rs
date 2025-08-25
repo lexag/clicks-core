@@ -1,21 +1,18 @@
 use std::{
-    net::{IpAddr, SocketAddr, UdpSocket},
+    net::{IpAddr, SocketAddr},
     str::FromStr,
 };
 
 use crate::{
     communication::{interface::CommunicationInterface, netport::NetworkPort},
-    logger, CrossbeamNetwork,
+    logger,
 };
 use chrono::{DateTime, Utc};
 use common::{
-    command::ControlCommand,
     control::ControlMessage,
     network::{NetworkStatus, SubscriberInfo},
     status::{Notification, NotificationKind},
 };
-use crossbeam_channel::Sender;
-use jack::Control;
 
 pub struct JsonNetHandler {
     port: NetworkPort,

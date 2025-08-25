@@ -9,10 +9,8 @@ mod logger;
 use common::{
     self,
     command::ControlCommand,
-    config::BootProgramOrder,
     control::ControlMessage,
-    cue::Cue,
-    network::{Heartbeat, JACKStatus},
+    network::Heartbeat,
     show::Show,
     status::Notification,
 };
@@ -28,7 +26,6 @@ use crate::{
     },
 };
 use clap::Parser;
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::{
     path::PathBuf,
     str::FromStr,

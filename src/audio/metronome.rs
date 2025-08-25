@@ -1,5 +1,4 @@
-use common::status::{BeatState, CombinedStatus, TransportState};
-use jack::{Client, ProcessScope};
+use common::status::{BeatState, TransportState};
 
 use crate::audio;
 use crate::audio::source::AudioSourceContext;

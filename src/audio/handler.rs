@@ -1,4 +1,3 @@
-use std::sync::Weak;
 
 use crate::{
     audio::{
@@ -11,13 +10,11 @@ use common::{
     network::{AudioDevice, JACKStatus},
     status::Notification,
 };
-use crossbeam_channel::{Receiver, Sender};
 use jack::{
-    AsyncClient, AudioIn, AudioOut, Client, ClientOptions, ClientStatus, Error, Port, PortFlags,
+    AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags,
     Unowned,
 };
 
-use common::command::ControlCommand;
 
 pub struct AudioHandler {
     pub client: Option<AsyncClient<JACKNotificationHandler, AudioProcessor>>,
@@ -154,7 +151,7 @@ impl AudioHandler {
         let ports = self.get_ports();
         let p_from = ports.0[from].clone();
         let p_to = ports.1[to].clone();
-        let mut client = match &self.client {
+        let client = match &self.client {
             Some(val) => val.as_client(),
             None => return false,
         };

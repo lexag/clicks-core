@@ -1,6 +1,5 @@
 pub use common::config::{LogContext, LogKind};
 use std::{
-    fmt::{Debug, Display},
     io::Write,
     path::PathBuf,
     str::FromStr,
