@@ -293,25 +293,25 @@ impl OscNetHandler {
 
         let mut cmds = vec![];
         for chidx in 0..32 {
-            if self.addreq(format!("/{chidx}/gain"))
-                && let Some(gain) = self.get_arg(0).float()
-            {
-                cmds.push(ControlMessage::ControlCommand(
-                    ControlCommand::SetChannelGain(chidx, gain),
-                ));
+            if self.addreq(format!("/{chidx}/gain")) {
+                if let Some(gain) = self.get_arg(0).float() {
+                    cmds.push(ControlMessage::ControlCommand(
+                        ControlCommand::SetChannelGain(chidx, gain),
+                    ));
+                }
             }
-            if self.addreq(format!("/{chidx}/mute"))
-                && let Some(mute) = self.get_arg(0).bool()
-            {
-                cmds.push(ControlMessage::ControlCommand(
-                    ControlCommand::SetChannelMute(chidx, mute),
-                ));
+            if self.addreq(format!("/{chidx}/mute")) {
+                if let Some(mute) = self.get_arg(0).bool() {
+                    cmds.push(ControlMessage::ControlCommand(
+                        ControlCommand::SetChannelMute(chidx, mute),
+                    ));
+                }
             }
             for out_idx in 0..64 {
-                if self.addreq(format!("/{chidx}/route/{out_idx}"))
-                    && let Some(patch) = self.get_arg(0).bool()
-                {
-                    cmds.push(ControlMessage::RoutingChangeRequest(chidx, out_idx, patch));
+                if self.addreq(format!("/{chidx}/route/{out_idx}")) {
+                    if let Some(patch) = self.get_arg(0).bool() {
+                        cmds.push(ControlMessage::RoutingChangeRequest(chidx, out_idx, patch));
+                    }
                 }
             }
         }

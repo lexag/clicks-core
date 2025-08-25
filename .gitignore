@@ -1,3 +1,6 @@
 /target
 /tools
 .cargo/*
+log.txt
+/logs
+/.config

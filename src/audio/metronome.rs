@@ -68,8 +68,12 @@ impl Metronome {
     }
     fn handle_event(&mut self, event: BeatEvent) {
         match event {
-            BeatEvent::JumpEvent { destination } => self.state.next_beat_idx = destination,
-            BeatEvent::VampEvent { length } => self.state.next_beat_idx -= length,
+            BeatEvent::JumpEvent {
+                destination,
+                requirement,
+                when_jumped,
+                when_passed,
+            } => self.state.next_beat_idx = destination,
             _ => {}
         }
     }
