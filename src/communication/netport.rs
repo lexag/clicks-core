@@ -6,7 +6,7 @@ const BUFFER_SIZE: usize = 1024 * 64;
 
 #[derive(Debug)]
 pub struct NetworkPort {
-    socket: UdpSocket,
+    pub socket: UdpSocket,
     buffer: [u8; BUFFER_SIZE],
 }
 

@@ -22,11 +22,20 @@ pub struct JsonNetHandler {
 
 impl JsonNetHandler {
     pub fn new(port: usize) -> Self {
-        Self {
+        let a = Self {
             port: NetworkPort::new(port),
             subscribers: vec![],
             input_queue: vec![],
-        }
+        };
+        logger::log(
+            format!(
+                "opened jsonnet port {}",
+                a.port.socket.local_addr().unwrap()
+            ),
+            common::config::LogContext::Network,
+            common::config::LogKind::Note,
+        );
+        a
     }
 }
 impl CommunicationInterface for JsonNetHandler {

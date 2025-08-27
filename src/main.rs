@@ -7,11 +7,7 @@ mod communication;
 mod logger;
 
 use common::{
-    self,
-    command::ControlCommand,
-    control::ControlMessage,
-    network::Heartbeat,
-    show::Show,
+    self, command::ControlCommand, control::ControlMessage, network::Heartbeat, show::Show,
     status::Notification,
 };
 
@@ -69,7 +65,7 @@ fn main() {
     }
 
     let mut config = boot::get_config().expect("required to continue");
-    let show = Show::from_file(show_path.join("show.json")).expect("required to continue");
+    let show = Show::from_file(show_path.join("show.json")).unwrap_or_default();
 
     let cbnet = CrossbeamNetwork::new();
 

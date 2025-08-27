@@ -1,6 +1,5 @@
 use jack::{
-    AudioOut, Client, Control, NotificationHandler, Port, ProcessHandler,
-    ProcessScope, Unowned,
+    AudioOut, Client, Control, NotificationHandler, Port, ProcessHandler, ProcessScope, Unowned,
 };
 
 use crate::{
@@ -28,16 +27,14 @@ impl AudioProcessor {
         ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>),
         cbnet: CrossbeamNetwork,
     ) -> AudioProcessor {
-        let mut ap = AudioProcessor {
+        AudioProcessor {
             ports,
             sources,
             cbnet,
             ctx: AudioSourceContext::default(),
             status: CombinedStatus::default(),
             status_changed_flag: false,
-        };
-        ap.status.sources = vec![AudioSourceState::None; 32];
-        ap
+        }
     }
 
     fn send_all_status(&self) {
@@ -143,9 +140,10 @@ impl AudioProcessor {
     }
 
     fn compile_child_statuses(&mut self) {
-        for (i, source) in self.sources.iter_mut().enumerate() {
+        self.status.sources.clear();
+        for source in self.sources.iter_mut() {
             let status = source.source_device.get_status(&self.ctx);
-            self.status.sources[i] = status;
+            self.status.sources.push(status);
         }
     }
 
