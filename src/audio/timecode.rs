@@ -1,9 +1,9 @@
-use crate::audio;
+use crate::audio::{self, source::AudioSourceContext};
 
 use common::{
     command::{CommandError, ControlCommand},
     cue::{Beat, BeatEvent, Cue},
-    status::{AudioSourceStatus, CombinedStatus, ProcessStatus},
+    status::AudioSourceState,
     timecode::TimecodeInstant,
 };
 
@@ -17,7 +17,6 @@ pub struct TimecodeSource {
     frame_buffer: [f32; 8192],
     cue: Cue,
     current_time: TimecodeInstant,
-    status: ProcessStatus,
 }
 
 impl Default for TimecodeSource {
@@ -32,7 +31,6 @@ impl Default for TimecodeSource {
             frame_buffer: [0.0f32; 8192],
             cue: Cue::empty(),
             current_time: TimecodeInstant::new(25),
-            status: ProcessStatus::default(),
         }
     }
 }
@@ -64,14 +62,30 @@ impl TimecodeSource {
     }
 
     fn generate_smpte_frame_bits(&self, user_bits: u32) -> u128 {
-        let h0: u128 = (self.current_time.h % 10).try_into().unwrap();
-        let h1: u128 = (self.current_time.h / 10).try_into().unwrap();
-        let m0: u128 = (self.current_time.m % 10).try_into().unwrap();
-        let m1: u128 = (self.current_time.m / 10).try_into().unwrap();
-        let s0: u128 = (self.current_time.s % 10).try_into().unwrap();
-        let s1: u128 = (self.current_time.s / 10).try_into().unwrap();
-        let f0: u128 = (self.current_time.f % 10).try_into().unwrap();
-        let f1: u128 = (self.current_time.f / 10).try_into().unwrap();
+        let h0: u128 = (self.current_time.h.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let h1: u128 = (self.current_time.h.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let m0: u128 = (self.current_time.m.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let m1: u128 = (self.current_time.m.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let s0: u128 = (self.current_time.s.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let s1: u128 = (self.current_time.s.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let f0: u128 = (self.current_time.f.abs() % 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
+        let f1: u128 = (self.current_time.f.abs() / 10)
+            .try_into()
+            .expect("u16 -> u128 cannot fail.");
         let user_bits: u32 = 0;
 
         let mut t_enc: u128 = 0;
@@ -137,37 +151,28 @@ impl TimecodeSource {
         };
         let mut time_off_us = 0_u64;
         for i in 0..beat_idx {
-            for event in self.cue.get_beat(i).unwrap().events {
-                match event {
-                    BeatEvent::TimecodeEvent { h, m, s, f } => {
-                        time.set_time(h, m, s, f);
-                        time_off_us = 0;
-                    }
-                    _ => {}
+            for event in self.cue.get_beat(i).unwrap_or_default().events {
+                if let BeatEvent::TimecodeEvent { h, m, s, f } = event {
+                    time.set_time(h, m, s, f);
+                    time_off_us = 0;
                 }
             }
-            time_off_us += (self.cue.get_beat(i).unwrap().length * 1000) as u64;
+            time_off_us += self.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         time.add_us(time_off_us);
         return time;
     }
-
-    //fn extract_time_status(&self, t_us: u128) -> AudioSourceStatus {
-    //    let h: usize = ((t_us >> 16) / 3600).try_into().unwrap();
-    //    let m: usize = ((t_us >> 16) / 60 % 60).try_into().unwrap();
-    //    let s: usize = ((t_us >> 16) % 60).try_into().unwrap();
-    //    let f: usize = (((t_us * self.frame_rate as u128) >> 16) % self.frame_rate as u128)
-    //        .try_into()
-    //        .unwrap();
-    //    return AudioSourceStatus::TimeStatus { h, m, s, f };
-    //}
 }
 
 impl audio::source::AudioSource for TimecodeSource {
-    fn get_status(&mut self, _c: &jack::Client, _ps: &jack::ProcessScope) -> AudioSourceStatus {
-        return AudioSourceStatus::TimeStatus(self.current_time.clone());
+    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
+        return AudioSourceState::TimeStatus(self.current_time.clone());
     }
-    fn command(&mut self, command: ControlCommand) -> Result<(), CommandError> {
+    fn command(
+        &mut self,
+        ctx: &AudioSourceContext,
+        command: ControlCommand,
+    ) -> Result<(), CommandError> {
         match command {
             ControlCommand::TransportZero => {
                 self.current_time.set_time(0, 0, 0, 0);
@@ -194,7 +199,8 @@ impl audio::source::AudioSource for TimecodeSource {
             }
             ControlCommand::TransportSeekBeat(beat_idx) => {
                 self.current_time = self.calculate_time_at_beat(beat_idx);
-                self.current_time.sub_us(self.status.us_to_next_beat as u64)
+                self.current_time
+                    .sub_us(ctx.transport.us_to_next_beat as u64)
             }
             ControlCommand::LoadCue(cue) => self.cue = cue.clone(),
             _ => {}
@@ -202,79 +208,67 @@ impl audio::source::AudioSource for TimecodeSource {
         return Ok(());
     }
 
-    fn send_buffer(
-        &mut self,
-        _c: &jack::Client,
-        _ps: &jack::ProcessScope,
-        status: ProcessStatus,
-    ) -> Result<&[f32], jack::Error> {
-        let sample_rate = _c.sample_rate() as u32;
+    fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         let last_cycle_frame = self.current_time.clone();
-        self.status = status.clone();
 
         if self.active {
-            self.current_time.add_progress(
-                (_ps.n_frames() * self.frame_rate as u32 * 65536 / sample_rate) as u16,
-            );
+            self.current_time
+                .add_progress((ctx.frame_size * self.frame_rate * 65536 / ctx.sample_rate) as u16);
         }
         for event in self
             .cue
-            .get_beat(status.next_beat_idx)
+            .get_beat(ctx.beat.next_beat_idx)
             .unwrap_or(Beat::empty())
-            .events
+            .events_filter(|e| matches!(e, BeatEvent::TimecodeEvent { .. }))
         {
-            match event {
-                BeatEvent::TimecodeEvent { h, m, s, f } => {
-                    // if this cycle will run over the edge into next beat, we set the new timecode
-                    // immediately AND restart the frame progress from 0. This is important, as
-                    // otherwise, the frame time would change mid-frame, and confusion follows.
-                    // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
-                    // frame starts up to 1 whole cycle too early, but it is negligible, as the
-                    // normal accuracy is only 1/fps (>33ms)
-                    if (status.us_to_next_beat as u32)
-                        < (_ps.n_frames() as u32 * 1000000) / sample_rate
-                    {
-                        self.active = true;
-                        self.current_time = TimecodeInstant {
-                            frame_rate: self.frame_rate,
-                            h: h as i16,
-                            m: m as i16,
-                            s: s as i16,
-                            f: f as i16,
-                            frame_progress: 0,
-                        };
-                    }
+            if let BeatEvent::TimecodeEvent { h, m, s, f } = event {
+                // if this cycle will run over the edge into next beat, we set the new timecode
+                // immediately AND restart the frame progress from 0. This is important, as
+                // otherwise, the frame time would change mid-frame, and confusion follows.
+                // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
+                // frame starts up to 1 whole cycle too early, but it is negligible, as the
+                // normal accuracy is only 1/fps (>33ms)
+                if ctx.will_overrun_frame() {
+                    self.active = true;
+                    self.current_time = TimecodeInstant {
+                        frame_rate: self.frame_rate,
+                        h: h as i16,
+                        m: m as i16,
+                        s: s as i16,
+                        f: f as i16,
+                        frame_progress: 0,
+                    };
                 }
-                _ => {}
             }
         }
 
-        if status.running && self.active {
-            // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-            let samples_per_frame: usize = sample_rate as usize / self.frame_rate as usize;
-            let samples_per_bit: usize = samples_per_frame / 80;
-
-            let subframe_sample =
-                self.current_time.frame_progress as u64 * samples_per_frame as u64 / 65536;
-
-            if last_cycle_frame != self.current_time {
-                self.frame_buffer.copy_within(
-                    samples_per_frame as usize..2 * samples_per_frame as usize,
-                    0,
-                );
-
-                // write next frame into next frame buffer
-                let next_frame_bits = self.generate_smpte_frame_bits(0x0);
-                let next_frame_buf = &self
-                    .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
-                    [0..samples_per_frame];
-                self.frame_buffer[samples_per_frame..2 * samples_per_frame]
-                    .copy_from_slice(&next_frame_buf);
-            }
-
-            return Ok(&self.frame_buffer
-                [subframe_sample as usize..subframe_sample as usize + _ps.n_frames() as usize]);
+        if !ctx.transport.running || !self.active {
+            return Ok(&self.silence(ctx.frame_size));
         }
-        return Ok(&[0f32; 2048][0.._ps.n_frames() as usize]);
+
+        // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
+        let samples_per_frame: usize = ctx.sample_rate as usize / self.frame_rate as usize;
+        let samples_per_bit: usize = samples_per_frame / 80;
+
+        let subframe_sample =
+            self.current_time.frame_progress as u64 * samples_per_frame as u64 / 65536;
+
+        if last_cycle_frame != self.current_time {
+            self.frame_buffer.copy_within(
+                samples_per_frame as usize..2 * samples_per_frame as usize,
+                0,
+            );
+
+            // write next frame into next frame buffer
+            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
+            let next_frame_buf = &self
+                .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
+                [0..samples_per_frame];
+            self.frame_buffer[samples_per_frame..2 * samples_per_frame]
+                .copy_from_slice(&next_frame_buf);
+        }
+
+        return Ok(&self.frame_buffer
+            [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
     }
 }

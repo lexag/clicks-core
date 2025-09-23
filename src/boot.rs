@@ -1,5 +1,5 @@
 use crate::logger;
-use common::config::{BootProgramOrder, SystemConfiguration};
+use common::config::SystemConfiguration;
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]
@@ -9,6 +9,7 @@ pub enum BootError {
     BootProgramOrderFailure(String),
     ConfigWriteError(String),
     LogCopyFailure(String),
+    FileReadError(String),
 }
 
 impl Display for BootError {
@@ -30,6 +31,9 @@ impl Display for BootError {
             }
             BootError::LogCopyFailure(errstr) => {
                 write!(f, "An error occured when copying log files: {errstr}")
+            }
+            BootError::FileReadError(errstr) => {
+                write!(f, "Could not read file: {errstr}")
             }
         }
     }
@@ -68,46 +72,49 @@ pub fn find_show_path() -> Result<PathBuf, BootError> {
             if path.len() == 0 {
                 return Err(BootError::ShowDoesNotExist);
             } else {
-                return Ok(PathBuf::from_str(path).unwrap());
+                return Ok(PathBuf::from_str(path).expect("PathBuf cannot fail from_str"));
             }
         }
     };
 }
 
 pub fn get_config_path() -> PathBuf {
-    return PathBuf::from_str(".config/clicks/clicks.conf")
-        .expect("Config file path conversion failed.");
+    return PathBuf::from_str(".config/clicks/clicks.conf").expect("PathBuf cannot fail from_str");
 }
 
 pub fn get_config() -> Result<SystemConfiguration, BootError> {
     if !std::fs::exists(get_config_path()).unwrap_or_default() {
-        std::fs::create_dir_all(get_config_path().parent().unwrap());
-        std::fs::write(
-            get_config_path(),
-            serde_json::to_string_pretty(&SystemConfiguration::default()).unwrap(),
-        );
+        write_default_config();
     }
-    match serde_json::from_str::<SystemConfiguration>(
-        std::str::from_utf8(&std::fs::read(get_config_path()).unwrap()).unwrap(),
-    ) {
+    let file_content = match std::fs::read(get_config_path()) {
+        Ok(content) => content,
+        Err(err) => return Err(BootError::FileReadError(err.to_string())),
+    };
+
+    let file_string = match std::str::from_utf8(&file_content) {
+        Ok(string) => string,
+        Err(err) => return Err(BootError::FileReadError(err.to_string())),
+    };
+
+    match serde_json::from_str::<SystemConfiguration>(file_string) {
         Ok(config) => Ok(config),
         Err(err) => Err(BootError::BootProgramOrderFailure(err.to_string())),
     }
 }
 
 pub fn write_default_config() -> Result<(), BootError> {
-    logger::log(
-        format!("Writing new config file and exiting.",),
-        logger::LogContext::Boot,
-        logger::LogKind::Note,
+    std::fs::create_dir_all(
+        get_config_path()
+            .parent()
+            .expect("get_config_path() is constant and has a definite parent."),
     );
-    match std::fs::write(
+    std::fs::write(
         get_config_path(),
-        serde_json::to_string_pretty(&common::config::SystemConfiguration::default()).unwrap(),
-    ) {
-        Ok(_) => return Ok(()),
-        Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),
-    }
+        serde_json::to_string_pretty(&SystemConfiguration::default()).expect(
+            "SystemConfiguration::default() has trivial derived conversion and will never fail.",
+        ),
+    );
+    Ok(())
 }
 
 pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
@@ -116,10 +123,13 @@ pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
         logger::LogContext::Boot,
         logger::LogKind::Note,
     );
-    match std::fs::write(
-        get_config_path(),
-        serde_json::to_string_pretty(&config).unwrap(),
-    ) {
+
+    let config_str = match serde_json::to_string_pretty(&config) {
+        Ok(val) => val,
+        Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),
+    };
+
+    match std::fs::write(get_config_path(), config_str) {
         Ok(_) => return Ok(()),
         Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),
     }

@@ -1,5 +1,4 @@
 use crate::logger;
-use common::{network::SubscriberInfo, status::Notification};
 use local_ip_address::local_ip;
 use std::net::{SocketAddr, UdpSocket};
 
@@ -7,7 +6,7 @@ const BUFFER_SIZE: usize = 1024 * 64;
 
 #[derive(Debug)]
 pub struct NetworkPort {
-    socket: UdpSocket,
+    pub socket: UdpSocket,
     buffer: [u8; BUFFER_SIZE],
 }
 
@@ -15,8 +14,12 @@ impl NetworkPort {
     pub fn new(port: usize) -> Self {
         let s = Self {
             buffer: [0; BUFFER_SIZE],
-            socket: UdpSocket::bind(format!("{}:{}", local_ip().unwrap().to_string(), port))
-                .expect("couldn't open local port"),
+            socket: UdpSocket::bind(format!(
+                "{}:{}",
+                local_ip().expect("Couldn't find IP").to_string(),
+                port
+            ))
+            .expect("couldn't open local port"),
         };
         let _ = s.socket.set_nonblocking(true);
         return s;

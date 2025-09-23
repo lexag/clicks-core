@@ -7,13 +7,7 @@ mod communication;
 mod logger;
 
 use common::{
-    self,
-    command::ControlCommand,
-    config::BootProgramOrder,
-    control::ControlMessage,
-    cue::Cue,
-    network::{Heartbeat, JACKStatus},
-    show::Show,
+    self, command::ControlCommand, control::ControlMessage, network::Heartbeat, show::Show,
     status::Notification,
 };
 
@@ -28,7 +22,6 @@ use crate::{
     },
 };
 use clap::Parser;
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::{
     path::PathBuf,
     str::FromStr,
@@ -67,14 +60,12 @@ fn main() {
     // FIXME: ugly way to make sure that jackd is dead after last debug run
     // should not need to exist in normal operation, because power cycle will reset jackd anyway,
     // and that is the only in-use way to rerun the program
-    let _ = std::process::Command::new("killall")
-        .arg("jackd")
-        .spawn()
-        .unwrap()
-        .wait();
+    if let Ok(mut child) = std::process::Command::new("killall").arg("jackd").spawn() {
+        child.wait();
+    }
 
-    let mut config = boot::get_config().unwrap();
-    let show = Show::from_file(show_path.join("show.json")).unwrap();
+    let mut config = boot::get_config().expect("required to continue");
+    let show = Show::from_file(show_path.join("show.json")).unwrap_or_default();
 
     let cbnet = CrossbeamNetwork::new();
 

@@ -1,20 +1,57 @@
-use jack::{Client, Error, ProcessScope};
+use jack::Error;
 
 use common::command::{CommandError, ControlCommand};
 
-use common::status::{AudioSourceStatus, ProcessStatus};
+use common::status::{AudioSourceState, BeatState, TransportState};
 use std::fmt::Debug;
 use std::ops::Div;
 
+use crate::cbnet::CrossbeamNetwork;
+
+pub struct AudioSourceContext {
+    pub jack_time: u64,
+    pub frame_size: usize,
+    pub sample_rate: usize,
+    pub beat: BeatState,
+    pub transport: TransportState,
+    pub cbnet: CrossbeamNetwork,
+}
+
+impl AudioSourceContext {
+    pub fn samples_to_next_beat(&self) -> usize {
+        (self.transport.us_to_next_beat / 10) * (self.sample_rate / 100) / 1000
+    }
+
+    pub fn will_overrun_frame(&self) -> bool {
+        self.samples_to_next_beat() < self.frame_size
+    }
+}
+
+impl Default for AudioSourceContext {
+    fn default() -> Self {
+        Self {
+            jack_time: 0,
+            frame_size: 0,
+            sample_rate: 0,
+            beat: BeatState::default(),
+            transport: TransportState::default(),
+            cbnet: CrossbeamNetwork::new(),
+        }
+    }
+}
+
 pub trait AudioSource: Send {
-    fn send_buffer(
+    fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], Error>;
+    fn command(
         &mut self,
-        _c: &Client,
-        _ps: &ProcessScope,
-        status: ProcessStatus,
-    ) -> Result<&[f32], Error>;
-    fn command(&mut self, command: ControlCommand) -> Result<(), CommandError>;
-    fn get_status(&mut self, _c: &Client, _ps: &ProcessScope) -> AudioSourceStatus;
+        ctx: &AudioSourceContext,
+        command: ControlCommand,
+    ) -> Result<(), CommandError>;
+    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState;
+
+    fn silence(&self, length: usize) -> &[f32] {
+        &[0f32; 2048][0..length]
+    }
 }
 
 pub struct SourceConfig {
