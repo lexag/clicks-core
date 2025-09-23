@@ -1,4 +1,3 @@
-
 use crate::{
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
@@ -10,11 +9,7 @@ use common::{
     network::{AudioDevice, JACKStatus},
     status::Notification,
 };
-use jack::{
-    AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags,
-    Unowned,
-};
-
+use jack::{AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags, Unowned};
 
 pub struct AudioHandler {
     pub client: Option<AsyncClient<JACKNotificationHandler, AudioProcessor>>,
@@ -44,7 +39,17 @@ impl AudioHandler {
     pub fn start(&mut self, sources: Vec<SourceConfig>) {
         self.start_server();
         std::thread::sleep(std::time::Duration::from_secs(5));
-        let client = self.start_client();
+        let client_res = self.start_client();
+        if client_res.is_err() {
+            logger::log(
+                "Could not open JACK client".to_string(),
+                common::config::LogContext::AudioHandler,
+                common::config::LogKind::Error,
+            );
+            self.shutdown();
+            return;
+        }
+        let client = client_res.expect("Err case handled above");
         let mut ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>) = (vec![], vec![]);
         ports.0 = self.init_client_ports(&client);
         ports.1 = self.collect_system_ports(&client);
@@ -222,22 +227,20 @@ impl AudioHandler {
         };
     }
 
-    pub fn start_client(&mut self) -> Client {
+    pub fn start_client(&mut self) -> Result<Client, ()> {
         let client_res = Client::new(
             &self.config.client.name.to_string(),
             ClientOptions::NO_START_SERVER,
         );
         match client_res {
-            Err(err) => {
-                panic!("Couldn't start JACK client: {err:?}");
-            }
+            Err(err) => Err(()),
             Ok((client, status)) => {
                 logger::log(
                     format!("Opened JACK client ({status:?})"),
                     logger::LogContext::AudioHandler,
                     logger::LogKind::Note,
                 );
-                client
+                Ok(client)
             }
         }
     }

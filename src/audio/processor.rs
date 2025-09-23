@@ -129,6 +129,11 @@ impl AudioProcessor {
                 self.sources[channel_idx].set_gain(gain);
             }
 
+            ControlCommand::ChangeJumpMode(jumpmode) => {
+                self.status.transport.vlt = jumpmode.vlt(self.status.transport.vlt);
+                self.notify_push(NotificationKind::TransportChanged);
+            }
+
             _ => {}
         }
 
@@ -145,6 +150,14 @@ impl AudioProcessor {
             let status = source.source_device.get_status(&self.ctx);
             self.status.sources.push(status);
         }
+
+        self.status.transport.vlt = self
+            .status
+            .beat_state()
+            .requested_vlt_action
+            .vlt(self.status.transport.vlt);
+
+        self.status.transport.ltc = self.status.time_state();
     }
 
     // Get audio buffer from source[idx] and copy it to the JACK client output buffer.
@@ -175,6 +188,7 @@ impl AudioProcessor {
             sample_rate: c.sample_rate(),
             beat: self.status.beat_state(),
             transport: self.status.transport.clone(),
+            cbnet: self.cbnet.clone(),
         }
     }
 }
@@ -204,6 +218,7 @@ impl ProcessHandler for AudioProcessor {
         // If cue runs out: stop and go to next
         if self.status.beat_state().beat_idx >= self.status.cue.cue.get_beats().len()
             && self.status.transport.running
+            && self.status.beat_state().beat_idx < usize::MAX / 2
         {
             self.status.transport.running = false;
             self.cbnet.command(ControlCommand::TransportStop);

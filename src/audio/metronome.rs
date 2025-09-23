@@ -65,14 +65,27 @@ impl Metronome {
             self.click_buffers[i] = buf;
         }
     }
-    fn handle_event(&mut self, event: BeatEvent) {
+    fn handle_event(&mut self, event: BeatEvent, ctx: &audio::source::AudioSourceContext) {
         match event {
             BeatEvent::JumpEvent {
                 destination,
                 requirement,
                 when_jumped,
                 when_passed,
-            } => self.state.next_beat_idx = destination,
+            } => {
+                let requirement_fullfilled = match requirement {
+                    common::cue::JumpRequirement::JumpModeOn => ctx.transport.vlt,
+                    common::cue::JumpRequirement::JumpModeOff => !ctx.transport.vlt,
+                    common::cue::JumpRequirement::None => true,
+                };
+
+                if requirement_fullfilled {
+                    self.state.next_beat_idx = destination;
+                    self.state.requested_vlt_action = when_jumped;
+                } else {
+                    self.state.requested_vlt_action = when_passed;
+                }
+            }
             _ => {}
         }
     }
@@ -119,8 +132,11 @@ impl audio::source::AudioSource for Metronome {
                     self.last_beat_time = scheduled_time;
                 }
                 for event in beat.events {
-                    self.handle_event(event);
+                    self.handle_event(event, ctx);
                 }
+                ctx.cbnet.notify(common::status::Notification::BeatChanged(
+                    self.state.clone(),
+                ));
                 return Ok(
                     &self.click_buffers[if beat.count == 1 { 0 } else { 1 }][0..ctx.frame_size]
                 );
@@ -141,7 +157,7 @@ impl audio::source::AudioSource for Metronome {
                 self.cue = cue;
             }
             ControlCommand::TransportZero => {
-                self.state.beat_idx = usize::MAX;
+                self.state.beat_idx = 0;
                 self.state.next_beat_idx = 0;
                 self.last_beat_time = 0;
             }

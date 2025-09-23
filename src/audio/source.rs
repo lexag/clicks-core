@@ -6,13 +6,15 @@ use common::status::{AudioSourceState, BeatState, TransportState};
 use std::fmt::Debug;
 use std::ops::Div;
 
-#[derive(Default)]
+use crate::cbnet::CrossbeamNetwork;
+
 pub struct AudioSourceContext {
     pub jack_time: u64,
     pub frame_size: usize,
     pub sample_rate: usize,
     pub beat: BeatState,
     pub transport: TransportState,
+    pub cbnet: CrossbeamNetwork,
 }
 
 impl AudioSourceContext {
@@ -22,6 +24,19 @@ impl AudioSourceContext {
 
     pub fn will_overrun_frame(&self) -> bool {
         self.samples_to_next_beat() < self.frame_size
+    }
+}
+
+impl Default for AudioSourceContext {
+    fn default() -> Self {
+        Self {
+            jack_time: 0,
+            frame_size: 0,
+            sample_rate: 0,
+            beat: BeatState::default(),
+            transport: TransportState::default(),
+            cbnet: CrossbeamNetwork::new(),
+        }
     }
 }
 
