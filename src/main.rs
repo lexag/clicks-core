@@ -38,13 +38,15 @@ struct Args {
     show_path_override: String,
 }
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn main() {
     logger::init();
     let args = Args::parse();
 
     if boot::try_patch().is_ok_and(|b| b) {
         logger::log(
-            "Patched version. Please reboot.",
+            "Patched version. Please reboot.".to_string(),
             common::config::LogContext::Boot,
             common::config::LogKind::Note,
         );
@@ -175,6 +177,8 @@ fn main() {
 
         if last_heartbeat_time.elapsed().gt(&Duration::from_secs(1)) {
             let heartbeat = Notification::Heartbeat(Heartbeat {
+                common_version: common::VERSION.to_string(),
+                system_version: VERSION.to_string(),
                 system_time: chrono::Utc::now().timestamp() as u64,
                 cpu_use_audio: ah.get_cpu_use(),
                 process_freq_main: loop_count,
