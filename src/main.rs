@@ -42,6 +42,15 @@ fn main() {
     logger::init();
     let args = Args::parse();
 
+    if boot::try_patch().is_ok_and(|b| b) {
+        logger::log(
+            "Patched version. Please reboot.",
+            common::config::LogContext::Boot,
+            common::config::LogKind::Note,
+        );
+        return;
+    }
+
     let show_path = if args.show_path_override.is_empty() {
         match boot::find_show_path() {
             Ok(val) => val,

@@ -4,8 +4,8 @@ use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]
 pub enum BootError {
-    ShowFindFailure(String),
-    ShowDoesNotExist,
+    FileFindFailure(String),
+    FileDoesNotExist,
     BootProgramOrderFailure(String),
     ConfigWriteError(String),
     LogCopyFailure(String),
@@ -15,10 +15,10 @@ pub enum BootError {
 impl Display for BootError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            BootError::ShowDoesNotExist => {
+            BootError::FileDoesNotExist => {
                 write!(f, "Could not find clicks show data. No results. Exiting.")
             }
-            BootError::ShowFindFailure(errstr) => write!(
+            BootError::FileFindFailure(errstr) => write!(
                 f,
                 "Could not find clicks show data. Unknown error: {errstr}"
             ),
@@ -47,20 +47,28 @@ pub fn log_boot_error(err: BootError) {
     );
 }
 
+pub fn find_update_path() -> Result<PathBuf, BootError> {
+    find_file_path("clicks.update")
+}
 pub fn find_show_path() -> Result<PathBuf, BootError> {
+    find_file_path("clicks.show")
+}
+
+pub fn find_file_path(file_name: &str) -> Result<PathBuf, BootError> {
     let data_path = match std::process::Command::new("find")
         .arg("/")
         .arg("-name")
-        .arg("clicks.show")
+        .arg(file_name)
         .output()
     {
         Err(err) => {
-            return Err(BootError::ShowFindFailure(format!("{err}")));
+            return Err(BootError::FileFindFailure(format!("{err}")));
         }
         Ok(res) => {
             logger::log(
                 format!(
-                    "Found show data path: {}",
+                    "Found {} at {}",
+                    file_name,
                     res.stdout.iter().map(|&c| c as char).collect::<String>()
                 ),
                 logger::LogContext::Boot,
@@ -70,7 +78,7 @@ pub fn find_show_path() -> Result<PathBuf, BootError> {
             let path = results.split('\n').nth(0).unwrap_or_default().trim();
 
             if path.len() == 0 {
-                return Err(BootError::ShowDoesNotExist);
+                return Err(BootError::FileDoesNotExist);
             } else {
                 return Ok(PathBuf::from_str(path).expect("PathBuf cannot fail from_str"));
             }
@@ -140,4 +148,24 @@ pub fn copy_logs(path: PathBuf) -> Result<(), BootError> {
         Ok(_) => Ok(()),
         Err(err) => Err(BootError::LogCopyFailure(err.to_string())),
     }
+}
+
+pub fn try_patch() -> Result<bool, ()> {
+    let update_path = match find_update_path() {
+        Ok(val) => val,
+        Err(err) => return Ok(false),
+    };
+
+    if let Ok(mut child) = std::process::Command::new("mv")
+        .arg(update_path)
+        .arg(match std::env::current_exe() {
+            Ok(path) => path,
+            Err(err) => return Err(()),
+        })
+        .spawn()
+    {
+        child.wait();
+        return Ok(true);
+    }
+    return Ok(false);
 }
