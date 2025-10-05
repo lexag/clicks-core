@@ -142,6 +142,16 @@ impl AudioProcessor {
         for source in &mut self.sources {
             let _ = source.source_device.command(&self.ctx, command.clone());
         }
+
+        self.compile_child_statuses();
+
+        match command.clone() {
+            ControlCommand::TransportZero => {
+                self.notify_push(NotificationKind::BeatChanged);
+                self.notify_push(NotificationKind::TransportChanged);
+            }
+            _ => {}
+        }
     }
 
     fn compile_child_statuses(&mut self) {
@@ -216,7 +226,7 @@ impl ProcessHandler for AudioProcessor {
         self.compile_child_statuses();
 
         // If cue runs out: stop and go to next
-        if self.status.beat_state().beat_idx >= self.status.cue.cue.get_beats().len()
+        if self.status.beat_state().beat_idx + 1 >= self.status.cue.cue.get_beats().len()
             && self.status.transport.running
             && self.status.beat_state().beat_idx < usize::MAX / 2
         {
