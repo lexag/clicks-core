@@ -65,21 +65,21 @@ pub fn find_file_path(file_name: &str) -> Result<PathBuf, BootError> {
             return Err(BootError::FileFindFailure(format!("{err}")));
         }
         Ok(res) => {
-            logger::log(
-                format!(
-                    "Found {} at {}",
-                    file_name,
-                    res.stdout.iter().map(|&c| c as char).collect::<String>()
-                ),
-                logger::LogContext::Boot,
-                logger::LogKind::Note,
-            );
             let results = res.stdout.iter().map(|&c| c as char).collect::<String>();
             let path = results.split('\n').nth(0).unwrap_or_default().trim();
 
             if path.len() == 0 {
                 return Err(BootError::FileDoesNotExist);
             } else {
+                logger::log(
+                    format!(
+                        "Found {} at {}",
+                        file_name,
+                        res.stdout.iter().map(|&c| c as char).collect::<String>()
+                    ),
+                    logger::LogContext::Boot,
+                    logger::LogKind::Note,
+                );
                 return Ok(PathBuf::from_str(path).expect("PathBuf cannot fail from_str"));
             }
         }
