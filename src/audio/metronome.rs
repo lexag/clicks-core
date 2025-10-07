@@ -95,7 +95,8 @@ impl audio::source::AudioSource for Metronome {
     fn get_status(&mut self, ctx: &audio::source::AudioSourceContext) -> AudioSourceState {
         let scheduled_time: u64;
         if let Some(beat) = self.cue.get_beat(self.state.beat_idx) {
-            scheduled_time = self.last_beat_time + beat.length as u64
+            scheduled_time =
+                self.last_beat_time + (beat.length * 100 / ctx.transport.playrate_percent) as u64
         } else {
             scheduled_time = u64::MAX
         };
@@ -120,7 +121,8 @@ impl audio::source::AudioSource for Metronome {
                 }
                 Some(val) => val,
             };
-            let scheduled_time: u64 = self.last_beat_time + beat.length as u64;
+            let scheduled_time: u64 =
+                self.last_beat_time + (beat.length * 100 / ctx.transport.playrate_percent) as u64;
 
             if ctx.jack_time > scheduled_time {
                 self.state.beat_idx = self.state.next_beat_idx;

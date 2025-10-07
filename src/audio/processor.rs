@@ -133,6 +133,10 @@ impl AudioProcessor {
                 self.status.transport.vlt = jumpmode.vlt(self.status.transport.vlt);
                 self.notify_push(NotificationKind::TransportChanged);
             }
+            ControlCommand::ChangePlayrate(playrate) => {
+                self.status.transport.playrate_percent = playrate;
+                self.notify_push(NotificationKind::TransportChanged);
+            }
 
             _ => {}
         }
@@ -177,8 +181,13 @@ impl AudioProcessor {
         if let Ok(buf) = res {
             let out_buf = self.ports.0[idx].as_mut_slice(ps);
             out_buf.clone_from_slice(buf);
+            let gain = if self.status.transport.playrate_percent != 100 && idx != 0 {
+                0.0
+            } else {
+                source.get_gain_mult().clone()
+            };
             for i in 0..out_buf.len() {
-                out_buf[i] *= source.get_gain_mult().clone();
+                out_buf[i] *= gain;
             }
             return Control::Continue;
         } else {
