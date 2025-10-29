@@ -166,11 +166,11 @@ impl TimecodeSource {
 }
 
 impl audio::source::AudioSource for TimecodeSource {
-    fn get_status(&mut self, ctx: &AudioSourceContext<'_>) -> AudioSourceState {
+    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
         return AudioSourceState::TimeStatus(self.current_time.clone());
     }
 
-    fn command(&mut self, ctx: &AudioSourceContext<'_>, command: ControlAction) {
+    fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
         match command {
             ControlAction::TransportZero => {
                 self.current_time.set_time(0, 0, 0, 0);
@@ -194,7 +194,7 @@ impl audio::source::AudioSource for TimecodeSource {
         }
     }
 
-    fn send_buffer(&mut self, ctx: &AudioSourceContext<'_>) -> Result<&[f32], jack::Error> {
+    fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         let last_cycle_frame = self.current_time.clone();
 
         if self.active {

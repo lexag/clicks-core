@@ -61,9 +61,7 @@ impl CommunicationInterface for JsonNetHandler {
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
             for subscriber in &mut self.subscribers {
-                if Some(subscriber.address.clone())
-                    == IpAddress::from_str_and_port(&src.ip().to_string(), src.port())
-                {
+                if subscriber.address == IpAddress::new(&src.ip().to_string(), src.port()) {
                     subscriber.last_contact = Utc::now().timestamp() as u128;
                 }
             }
@@ -161,7 +159,7 @@ impl CommunicationInterface for JsonNetHandler {
                         .expect("notification has trivial derived conversion")
                         .as_bytes(),
                     SocketAddr::new(
-                        IpAddr::from_str(&format!("{}", &subscriber.address).to_string())
+                        IpAddr::from_str(&subscriber.address.addr_as_str())
                             .expect("all subscriber addresses are santizied earlier"),
                         subscriber.address.port,
                     ),
