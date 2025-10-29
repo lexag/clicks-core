@@ -13,9 +13,8 @@ use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowne
 use crate::{
     CrossbeamNetwork,
     audio::source::{AudioSource, AudioSourceContext, SourceConfig},
-    logger,
+    logger, CrossbeamNetwork,
 };
-use std::thread::current;
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
@@ -233,7 +232,7 @@ impl AudioProcessor {
     }
 }
 
-impl ProcessHandler for AudioProcessor {
+impl ProcessHandler for AudioProcessor<'_> {
     fn process(&mut self, c: &Client, ps: &ProcessScope) -> Control {
         // Handle channel commands
         loop {
