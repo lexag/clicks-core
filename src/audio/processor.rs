@@ -108,12 +108,14 @@ impl AudioProcessor {
             }
 
             ControlAction::LoadCueFromSelfIndex => {
-                self.load_cue(self.status.show.cues[self.status.cue.cue_idx as usize].clone());
+                let _ = self.cbnet.command(ControlAction::LoadCueByIndex(
+                    self.status.cue.cue_idx as usize,
+                ));
             }
             ControlAction::LoadCueByIndex(idx) => {
                 if idx < self.status.show.cues.len() {
+                    self.load_cue(self.status.show.cues[idx].clone());
                     self.status.cue.cue_idx = idx as u16;
-                    let _ = self.cbnet.command(ControlAction::LoadCueFromSelfIndex);
                 }
             }
             ControlAction::LoadPreviousCue => {

@@ -1,9 +1,8 @@
-pub use common::config::{LogContext, LogKind};
-use std::{
-    io::Write,
-    path::PathBuf,
-    str::FromStr,
+use common::{
+    local::config::{LogContext, LogKind},
+    mem::time::format_hms,
 };
+use std::{io::Write, path::PathBuf, str::FromStr};
 
 pub fn get_path() -> PathBuf {
     const LOG_PATH_STR: &str = "logs";
@@ -73,7 +72,7 @@ pub fn log(msg: String, context: LogContext, kind: LogKind) {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let systime_str = common::time::format_hms(systime);
+    let systime_str = format_hms(systime).str();
 
     let mut file = match std::fs::OpenOptions::new()
         .write(true)

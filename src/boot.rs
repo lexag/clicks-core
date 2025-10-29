@@ -1,5 +1,5 @@
 use crate::logger;
-use common::config::SystemConfiguration;
+use common::local::config::{LogContext, LogKind, SystemConfiguration};
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]
@@ -40,11 +40,7 @@ impl Display for BootError {
 }
 
 pub fn log_boot_error(err: BootError) {
-    logger::log(
-        err.to_string(),
-        logger::LogContext::Boot,
-        logger::LogKind::Error,
-    );
+    logger::log(err.to_string(), LogContext::Boot, LogKind::Error);
 }
 
 pub fn find_update_path() -> Result<PathBuf, BootError> {
@@ -77,8 +73,8 @@ pub fn find_file_path(file_name: &str) -> Result<PathBuf, BootError> {
                         file_name,
                         res.stdout.iter().map(|&c| c as char).collect::<String>()
                     ),
-                    logger::LogContext::Boot,
-                    logger::LogKind::Note,
+                    LogContext::Boot,
+                    LogKind::Note,
                 );
                 return Ok(PathBuf::from_str(path).expect("PathBuf cannot fail from_str"));
             }
@@ -128,8 +124,8 @@ pub fn write_default_config() -> Result<(), BootError> {
 pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
     logger::log(
         format!("Saving configuration file...",),
-        logger::LogContext::Boot,
-        logger::LogKind::Note,
+        LogContext::Boot,
+        LogKind::Note,
     );
 
     let config_str = match serde_json::to_string_pretty(&config) {

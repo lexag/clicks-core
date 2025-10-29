@@ -5,9 +5,13 @@ use crate::{
     logger, CrossbeamNetwork,
 };
 use common::{
-    config::AudioConfiguration,
-    network::{AudioDevice, JACKStatus},
-    status::Notification,
+    cue::Show,
+    local::{
+        config::{AudioConfiguration, LogContext, LogKind},
+        status::{AudioDevice, JACKStatus},
+    },
+    mem::str::String32,
+    protocol::message::Message,
 };
 use jack::{AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags, Unowned};
 
@@ -36,15 +40,15 @@ impl AudioHandler {
         self.config = config
     }
 
-    pub fn start(&mut self, sources: Vec<SourceConfig>) {
+    pub fn start(&mut self, sources: Vec<SourceConfig>, show: Show) {
         self.start_server();
         std::thread::sleep(std::time::Duration::from_secs(5));
         let client_res = self.start_client();
         if client_res.is_err() {
             logger::log(
                 "Could not open JACK client".to_string(),
-                common::config::LogContext::AudioHandler,
-                common::config::LogKind::Error,
+                LogContext::AudioHandler,
+                LogKind::Error,
             );
             self.shutdown();
             return;
@@ -54,14 +58,14 @@ impl AudioHandler {
         ports.0 = self.init_client_ports(&client);
         ports.1 = self.collect_system_ports(&client);
 
-        let processor = AudioProcessor::new(sources, ports, self.cbnet.clone());
+        let processor = AudioProcessor::new(sources, ports, self.cbnet.clone(), show);
         let ac = match client.activate_async(JACKNotificationHandler, processor) {
             Ok(val) => val,
             Err(err) => {
                 logger::log(
                     format!("Error starting audio client: {err}"),
-                    common::config::LogContext::AudioHandler,
-                    common::config::LogKind::Error,
+                    LogContext::AudioHandler,
+                    LogKind::Error,
                 );
                 return;
             }
@@ -80,7 +84,7 @@ impl AudioHandler {
             .expect("Client is none is handled.")
             .as_client();
         let mut i_ports = client.ports(
-            Some(&self.config.client.name),
+            Some(String::from_utf8(&self.config.client.name.content).unwrap_or_default()),
             Some("32 bit float mono audio"),
             PortFlags::IS_OUTPUT,
         );
@@ -99,7 +103,7 @@ impl AudioHandler {
             .collect();
 
         let mut o_ports = client.ports(
-            Some(&self.config.server.system_name),
+            Some(String::from_utf8(&self.config.server.system_name.content).unwrap_or_default()),
             Some("32 bit float mono audio"),
             PortFlags::IS_INPUT,
         );
@@ -170,8 +174,8 @@ impl AudioHandler {
             Ok(val) => {
                 logger::log(
                     format!("Set port [{from}] -> [{to}] to {connect}"),
-                    logger::LogContext::AudioHandler,
-                    logger::LogKind::Note,
+                    LogContext::AudioHandler,
+                    LogKind::Note,
                 );
 
                 return true;
@@ -179,8 +183,8 @@ impl AudioHandler {
             Err(err) => {
                 logger::log(
                     format!("JACK Connection Error: {err}"),
-                    logger::LogContext::AudioHandler,
-                    logger::LogKind::Error,
+                    LogContext::AudioHandler,
+                    LogKind::Error,
                 );
                 return false;
             }
@@ -200,7 +204,7 @@ impl AudioHandler {
             self.jack_status.buffer_size = client.buffer_size() as usize;
             self.jack_status.sample_rate = client.sample_rate();
             self.jack_status.frame_size = 0;
-            self.jack_status.client_name = client.name().to_string();
+            self.jack_status.client_name = String32::new(client.name());
             self.jack_status.output_name = self.config.server.system_name.clone();
             self.jack_status.connections = self.get_connections();
         }
@@ -218,7 +222,10 @@ impl AudioHandler {
         self.jack_server_process = match std::process::Command::new("jackd")
             .arg("-R")
             .args(["-d", "alsa"])
-            .args(["-d", &self.config.server.device_id])
+            .args([
+                "-d",
+                &String::from_utf8(&self.config.server.device_id.content).unwrap_or_default(),
+            ])
             .args(["-r", &self.config.server.sample_rate.to_string()])
             .spawn()
         {
@@ -229,7 +236,7 @@ impl AudioHandler {
 
     pub fn start_client(&mut self) -> Result<Client, ()> {
         let client_res = Client::new(
-            &self.config.client.name.to_string(),
+            &String::from_utf8(&self.config.client.name.content).unwrap_or_default(),
             ClientOptions::NO_START_SERVER,
         );
         match client_res {
@@ -237,8 +244,8 @@ impl AudioHandler {
             Ok((client, status)) => {
                 logger::log(
                     format!("Opened JACK client ({status:?})"),
-                    logger::LogContext::AudioHandler,
-                    logger::LogKind::Note,
+                    LogContext::AudioHandler,
+                    LogKind::Note,
                 );
                 Ok(client)
             }
@@ -261,7 +268,7 @@ impl AudioHandler {
 
     pub fn collect_system_ports(&self, client: &Client) -> Vec<Port<Unowned>> {
         let mut ports = client.ports(
-            Some(&self.config.server.system_name),
+            Some(&String::from_utf8(&self.config.server.system_name.content).unwrap_or_default()),
             Some("32 bit float mono audio"),
             PortFlags::IS_INPUT,
         );
@@ -272,8 +279,8 @@ impl AudioHandler {
         });
         logger::log(
             format!("Found {} system ports.", ports.len()),
-            logger::LogContext::AudioHandler,
-            logger::LogKind::Note,
+            LogContext::AudioHandler,
+            LogKind::Note,
         );
         return ports
             .iter()
@@ -287,7 +294,7 @@ impl AudioHandler {
 
     pub fn send_status(&mut self) {
         let status = self.get_jack_status();
-        let _ = self.cbnet.notify(Notification::JACKStateChanged(status));
+        let _ = self.cbnet.notify(Message::JACKStateChanged(status));
     }
 
     pub fn get_hw_devices(&self) -> Vec<AudioDevice> {

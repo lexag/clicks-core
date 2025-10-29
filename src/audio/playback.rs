@@ -201,7 +201,7 @@ impl PlaybackHandler {
     pub fn create_audio_sources(&mut self) -> Vec<SourceConfig> {
         let mut devices = vec![];
         for channel in 0..self.num_channels {
-            let mut device = PlaybackDevice::new(channel, self.show_path.clone());
+            let mut device = PlaybackDevice::new(channel as u16, self.show_path.clone());
             for clip in &self.clips[channel] {
                 device.clips.push(AudioClip {
                     clip_idx: Arc::clone(&clip.clip_idx),

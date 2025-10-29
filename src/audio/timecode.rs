@@ -38,7 +38,7 @@ impl TimecodeSource {
         TimecodeSource {
             frame_rate,
             current_time: TimecodeInstant {
-                frame_rate: frame_rate,
+                frame_rate,
                 h: 0,
                 m: 0,
                 s: 0,
@@ -105,7 +105,7 @@ impl TimecodeSource {
 
         // user bits
         for i in 0..8 {
-            t_enc |= ((user_bits & (0b1111 << i)) as u128) << 4 * i + 4;
+            t_enc |= ((user_bits & (0b1111 << i)) as u128) << (4 * i + 4);
         }
 
         // sync word
@@ -138,11 +138,7 @@ impl TimecodeSource {
         return buf;
     }
 
-    fn calculate_time_at_beat(
-        &self,
-        ctx: &AudioSourceContext<'_>,
-        beat_idx: u16,
-    ) -> TimecodeInstant {
+    fn calculate_time_at_beat(&self, ctx: &AudioSourceContext, beat_idx: u16) -> TimecodeInstant {
         let mut time = TimecodeInstant {
             h: 0,
             m: 0,
@@ -170,11 +166,11 @@ impl TimecodeSource {
 }
 
 impl audio::source::AudioSource for TimecodeSource {
-    fn get_status(&mut self, ctx: &AudioSourceContext<'_>) -> AudioSourceState {
+    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
         return AudioSourceState::TimeStatus(self.current_time.clone());
     }
 
-    fn command(&mut self, ctx: &AudioSourceContext<'_>, command: ControlAction) {
+    fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
         match command {
             ControlAction::TransportZero => {
                 self.current_time.set_time(0, 0, 0, 0);
@@ -198,7 +194,7 @@ impl audio::source::AudioSource for TimecodeSource {
         }
     }
 
-    fn send_buffer(&mut self, ctx: &AudioSourceContext<'_>) -> Result<&[f32], jack::Error> {
+    fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         let last_cycle_frame = self.current_time.clone();
 
         if self.active {
@@ -236,7 +232,7 @@ impl audio::source::AudioSource for TimecodeSource {
             [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
     }
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext<'_>, event: common::event::Event) {
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         if let Some(EventDescription::TimecodeEvent { h, m, s, f }) = event.event {
             // if this cycle will run over the edge into next beat, we set the new timecode
             // immediately AND restart the frame progress from 0. This is important, as
