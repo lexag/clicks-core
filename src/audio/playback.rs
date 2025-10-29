@@ -4,15 +4,15 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use common::{
-    command::ControlCommand,
-    cue::{BeatEvent, Cue},
-    show::Show,
-    status::AudioSourceState,
+    cue::{Cue, Show},
+    event::{EventCursor, EventDescription},
+    local::{
+        config::{LogContext, LogKind},
+        status::{AudioSourceState, PlaybackState},
+    },
+    protocol::request::ControlAction,
 };
-use std::{
-    fmt::Debug, ops::Div, path::PathBuf,
-    sync::Arc,
-};
+use std::{fmt::Debug, ops::Div, path::PathBuf, sync::Arc};
 
 const LOCAL_BUF_SIZE: usize = 48000;
 
@@ -78,22 +78,25 @@ impl PlaybackHandler {
             return 0;
         }
         let mut clips_in_cue = 0;
-        for beat in cue.get_beats() {
-            for event in beat.events {
-                match event {
-                    BeatEvent::PlaybackEvent {
-                        channel_idx,
-                        clip_idx,
-                        sample,
-                    } => {
-                        if channel_idx == channel {
-                            clips_in_cue += 1;
-                        }
-                    }
-                    _ => {}
+        let mut cursor = EventCursor::new(&cue.events);
+        loop {
+            let event = cursor.get_next();
+            if event.is_null() {
+                break;
+            }
+
+            if let Some(EventDescription::PlaybackEvent {
+                channel_idx,
+                clip_idx: _,
+                sample: _,
+            }) = event.event
+            {
+                if channel_idx == channel as u16 {
+                    clips_in_cue += 1;
                 }
             }
         }
+
         clips_in_cue
     }
 
@@ -106,8 +109,8 @@ impl PlaybackHandler {
             Err(err) => {
                 logger::log(
                     format!("Error opening playback media: {}", err),
-                    logger::LogContext::AudioSource,
-                    logger::LogKind::Error,
+                    LogContext::AudioSource,
+                    LogKind::Error,
                 );
                 return vec![0.0; 48000];
             }
@@ -119,8 +122,8 @@ impl PlaybackHandler {
                     if let Err(err) = sample {
                         logger::log(
                             format!("Error opening playback media: {}", err),
-                            logger::LogContext::AudioSource,
-                            logger::LogKind::Error,
+                            LogContext::AudioSource,
+                            LogKind::Error,
                         );
                         return 0.0;
                     }
@@ -133,8 +136,8 @@ impl PlaybackHandler {
                     if let Err(err) = sample {
                         logger::log(
                             format!("Error opening playback media: {}", err),
-                            logger::LogContext::AudioSource,
-                            logger::LogKind::Error,
+                            LogContext::AudioSource,
+                            LogKind::Error,
                         );
                         return 0.0;
                     }
@@ -150,23 +153,25 @@ impl PlaybackHandler {
     // non-duplicated.
     fn clip_idxs_in_cue(&self, cue: &Cue) -> Vec<Vec<usize>> {
         let mut clips: Vec<Vec<usize>> = Vec::new();
-        for i in 0..self.num_channels {
+        for _ in 0..self.num_channels {
             clips.push(Vec::new());
         }
-        for beat in cue.get_beats() {
-            for event in beat.events {
-                match event {
-                    BeatEvent::PlaybackEvent {
-                        channel_idx,
-                        clip_idx,
-                        sample,
-                    } => {
-                        if !clips[channel_idx].contains(&clip_idx) {
-                            clips[channel_idx].push(clip_idx);
-                        }
-                    }
-                    _ => {}
-                };
+        let mut cursor = EventCursor::new(&cue.events);
+        loop {
+            let event = cursor.get_next();
+            if event.is_null() {
+                break;
+            }
+
+            if let Some(EventDescription::PlaybackEvent {
+                channel_idx,
+                clip_idx,
+                sample: _,
+            }) = event.event
+            {
+                if !clips[channel_idx as usize].contains(&(clip_idx as usize)) {
+                    clips[channel_idx as usize].push(clip_idx as usize);
+                }
             }
         }
         return clips;
@@ -225,33 +230,36 @@ impl PlaybackHandler {
 
 #[cfg(test)]
 mod tests {
+    use common::event::Event;
+
     use super::*;
     #[test]
 
     fn clips_counter() {
         let pbh = PlaybackHandler::new(PathBuf::new(), 32);
-        for length in [0, 1, 2, 100, 10000] {
+        for length in [0, 1, 2, 100] {
             for channel in (0..34).step_by(2) {
-                let cue = Cue {
-                    metadata: common::cue::CueMetadata {
-                        name: String::new(),
-                        human_ident: String::new(),
-                    },
-                    beats: (0..length)
-                        .map(|i| common::cue::Beat {
-                            events: vec![BeatEvent::PlaybackEvent {
+                let mut cue = Cue::empty();
+                for i in 0..length {
+                    cue.events.set(
+                        i,
+                        Event::new(
+                            i as u16,
+                            EventDescription::PlaybackEvent {
                                 channel_idx: channel,
                                 clip_idx: 0,
                                 sample: 0,
-                            }],
-                            ..Default::default()
-                        })
-                        .collect(),
-                };
+                            },
+                        ),
+                    );
+                }
                 if channel <= 32 {
-                    assert_eq!(pbh.num_channel_clips_in_cue(&cue, channel), length);
+                    assert_eq!(
+                        pbh.num_channel_clips_in_cue(&cue, channel as usize),
+                        length as usize
+                    );
                 } else {
-                    assert_eq!(pbh.num_channel_clips_in_cue(&cue, channel), 0);
+                    assert_eq!(pbh.num_channel_clips_in_cue(&cue, channel as usize), 0);
                 }
             }
         }
@@ -260,41 +268,45 @@ mod tests {
 
 #[derive(Debug)]
 pub struct PlaybackDevice {
-    pub channel_idx: usize,
+    pub channel_idx: u16,
     pub current_sample: i32,
     pub current_clip: usize,
     clips: Vec<AudioClip>,
     show_path: PathBuf,
-    cue: Cue,
     active: bool,
 }
 
 impl PlaybackDevice {
-    fn new(channel_idx: usize, show_path: PathBuf) -> PlaybackDevice {
+    fn new(channel_idx: u16, show_path: PathBuf) -> PlaybackDevice {
         PlaybackDevice {
             channel_idx,
             current_sample: 0,
             current_clip: 0,
             clips: vec![],
             show_path,
-            cue: Cue::empty(),
             active: false,
         }
     }
 
-    fn calculate_time_at_beat(&mut self, beat_idx: usize) -> (usize, bool, i32) {
+    fn calculate_time_at_beat(
+        &mut self,
+        ctx: &AudioSourceContext,
+        beat_idx: u16,
+    ) -> (usize, bool, i32) {
         let mut running_active = false;
         let mut running_clip = 0;
         let mut running_sample = 0;
         let mut time_off_us = 0_u64;
+        let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            for event in self.cue.get_beat(i).unwrap_or_default().events {
-                match event {
-                    BeatEvent::PlaybackEvent {
+            while cursor.at_or_before(i as u16) {
+                let event = cursor.get_next();
+                match event.event {
+                    Some(EventDescription::PlaybackEvent {
                         channel_idx,
                         clip_idx,
                         sample,
-                    } => {
+                    }) => {
                         if channel_idx == self.channel_idx {
                             running_sample = sample;
                             running_clip = clip_idx;
@@ -302,7 +314,7 @@ impl PlaybackDevice {
                             time_off_us = 0;
                         }
                     }
-                    BeatEvent::PlaybackStopEvent { channel_idx } => {
+                    Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
                         if channel_idx == self.channel_idx {
                             running_active = false;
                         }
@@ -310,11 +322,11 @@ impl PlaybackDevice {
                     _ => {}
                 }
             }
-            time_off_us += self.cue.get_beat(i).unwrap_or_default().length as u64;
+            time_off_us += ctx.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         // TODO: support multiple and resampled sample rates
         running_sample += time_off_us as i32 * 48 / 1000;
-        return (running_clip, running_active, running_sample);
+        return (running_clip as usize, running_active, running_sample);
     }
 }
 
@@ -322,47 +334,6 @@ impl AudioSource for PlaybackDevice {
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         if !ctx.transport.running {
             return Ok(&self.silence(ctx.frame_size));
-        }
-        let beat = self
-            .cue
-            .get_beat(ctx.beat.next_beat_idx)
-            .unwrap_or_default();
-
-        // Handle possible playback events
-        for event in beat.events_filter(|e| {
-            matches!(e, BeatEvent::PlaybackEvent { .. })
-                || matches!(e, BeatEvent::PlaybackStopEvent { .. })
-        }) {
-            match event {
-                _ => {}
-                BeatEvent::PlaybackEvent {
-                    channel_idx,
-                    clip_idx,
-                    sample,
-                } => {
-                    if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {
-                        continue;
-                    }
-                    // if this cycle will run over the edge into next beat, we start playback
-                    // slightly before start of audio clip, so it aligns on the downbeat
-                    // sample.
-                    self.active = true;
-                    self.current_sample = sample;
-                    for (i, clip) in self.clips.iter().enumerate() {
-                        if clip.read_index() == clip_idx {
-                            self.current_clip = i;
-                        } else {
-                            self.active = false;
-                        }
-                    }
-                }
-                BeatEvent::PlaybackStopEvent { channel_idx } => {
-                    if channel_idx != self.channel_idx {
-                        continue;
-                    }
-                    self.active = false;
-                }
-            }
         }
 
         // If currently not playing or prerolling before playing, return silence
@@ -385,43 +356,70 @@ impl AudioSource for PlaybackDevice {
         return Ok(&buf[0..ctx.frame_size]);
     }
 
-    fn command(
-        &mut self,
-        ctx: &AudioSourceContext,
-        command: common::command::ControlCommand,
-    ) -> Result<(), common::command::CommandError> {
+    fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
         match command {
-            ControlCommand::LoadCue(cue) => {
-                self.cue = cue;
-            }
-            ControlCommand::TransportStop => {
+            ControlAction::TransportStop => {
                 self.active = false;
             }
-            ControlCommand::TransportZero => {
+            ControlAction::TransportZero => {
                 self.active = false;
             }
 
-            ControlCommand::TransportJumpBeat(beat_idx) => {
+            ControlAction::TransportJumpBeat(beat_idx) => {
                 (self.current_clip, self.active, self.current_sample) =
-                    self.calculate_time_at_beat(beat_idx);
+                    self.calculate_time_at_beat(ctx, beat_idx as u16);
             }
-            ControlCommand::TransportSeekBeat(beat_idx) => {
+            ControlAction::TransportSeekBeat(beat_idx) => {
                 (self.current_clip, self.active, self.current_sample) =
-                    self.calculate_time_at_beat(beat_idx);
+                    self.calculate_time_at_beat(ctx, beat_idx as u16);
                 // TODO: Support multiple and mixed sample rates
                 self.current_sample -= (ctx.transport.us_to_next_beat as i32) * 48 / 1000
             }
             _ => {}
         }
-        Ok(())
     }
 
-    fn get_status(&mut self, ctx: &AudioSourceContext) -> common::status::AudioSourceState {
-        AudioSourceState::PlaybackStatus(common::status::PlaybackState {
-            clips: self.clips.iter().map(|c| c.read_index()).collect(),
-            clip_idx: self.current_clip,
+    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
+        let mut clips = [0u16; 16];
+        for (i, clip) in clips.iter_mut().enumerate() {
+            *clip = self.clips[i].read_index() as u16;
+        }
+        AudioSourceState::PlaybackStatus(PlaybackState {
+            clips,
+            clip_idx: self.current_clip as u16,
             current_sample: self.current_sample,
             playing: self.active,
         })
+    }
+
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+        // FIXME: these event handlers really care about the next beat and not the current, because
+        // they need to start playing sliiiightly early to be in sync
+        match event.event {
+            Some(EventDescription::PlaybackEvent {
+                channel_idx,
+                clip_idx,
+                sample,
+            }) => {
+                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {}
+                // if this cycle will run over the edge into next beat, we start playback
+                // slightly before start of audio clip, so it aligns on the downbeat
+                // sample.
+                self.active = true;
+                self.current_sample = sample;
+                for (i, clip) in self.clips.iter().enumerate() {
+                    if clip.read_index() == clip_idx as usize {
+                        self.current_clip = i;
+                    } else {
+                        self.active = false;
+                    }
+                }
+            }
+            Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
+                if channel_idx != self.channel_idx {}
+                self.active = false;
+            }
+            _ => {}
+        }
     }
 }

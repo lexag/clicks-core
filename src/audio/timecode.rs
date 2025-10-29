@@ -1,10 +1,10 @@
 use crate::audio::{self, source::AudioSourceContext};
 
 use common::{
-    command::{CommandError, ControlCommand},
-    cue::{Beat, BeatEvent, Cue},
-    status::AudioSourceState,
-    timecode::TimecodeInstant,
+    event::{EventCursor, EventDescription},
+    local::status::AudioSourceState,
+    mem::smpte::TimecodeInstant,
+    protocol::request::ControlAction,
 };
 
 pub struct TimecodeSource {
@@ -15,7 +15,6 @@ pub struct TimecodeSource {
     pub external_clock: bool,
     volume: f32,
     frame_buffer: [f32; 8192],
-    cue: Cue,
     current_time: TimecodeInstant,
 }
 
@@ -29,7 +28,6 @@ impl Default for TimecodeSource {
             external_clock: false,
             volume: 1.0,
             frame_buffer: [0.0f32; 8192],
-            cue: Cue::empty(),
             current_time: TimecodeInstant::new(25),
         }
     }
@@ -140,7 +138,11 @@ impl TimecodeSource {
         return buf;
     }
 
-    fn calculate_time_at_beat(&self, beat_idx: usize) -> TimecodeInstant {
+    fn calculate_time_at_beat(
+        &self,
+        ctx: &AudioSourceContext<'_>,
+        beat_idx: u16,
+    ) -> TimecodeInstant {
         let mut time = TimecodeInstant {
             h: 0,
             m: 0,
@@ -150,14 +152,17 @@ impl TimecodeSource {
             frame_rate: self.frame_rate,
         };
         let mut time_off_us = 0_u64;
+        let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            for event in self.cue.get_beat(i).unwrap_or_default().events {
-                if let BeatEvent::TimecodeEvent { h, m, s, f } = event {
-                    time.set_time(h, m, s, f);
+            while cursor.at_or_before(beat_idx as u16) {
+                if let Some(EventDescription::TimecodeEvent { h, m, s, f }) =
+                    cursor.get_next().event
+                {
+                    time.set_time(h as usize, m as usize, s as usize, f as usize);
                     time_off_us = 0;
                 }
             }
-            time_off_us += self.cue.get_beat(i).unwrap_or_default().length as u64;
+            time_off_us += ctx.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         time.add_us(time_off_us);
         return time;
@@ -165,81 +170,40 @@ impl TimecodeSource {
 }
 
 impl audio::source::AudioSource for TimecodeSource {
-    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
+    fn get_status(&mut self, ctx: &AudioSourceContext<'_>) -> AudioSourceState {
         return AudioSourceState::TimeStatus(self.current_time.clone());
     }
-    fn command(
-        &mut self,
-        ctx: &AudioSourceContext,
-        command: ControlCommand,
-    ) -> Result<(), CommandError> {
+
+    fn command(&mut self, ctx: &AudioSourceContext<'_>, command: ControlAction) {
         match command {
-            ControlCommand::TransportZero => {
+            ControlAction::TransportZero => {
                 self.current_time.set_time(0, 0, 0, 0);
                 self.current_time.frame_progress = 0;
-
-                for event in self.cue.get_beat(0).unwrap_or_default().events {
-                    match event {
-                        BeatEvent::TimecodeEvent { h, m, s, f } => {
-                            self.current_time.set_time(h, m, s, f);
-                            self.active = true;
-                        }
-                        _ => {}
-                    }
-                }
             }
-            ControlCommand::TransportStop => {
+            ControlAction::TransportStop => {
                 self.active = false;
             }
-            ControlCommand::TransportStart => {
+            ControlAction::TransportStart => {
                 self.active = true;
             }
-            ControlCommand::TransportJumpBeat(beat_idx) => {
-                self.current_time = self.calculate_time_at_beat(beat_idx);
+            ControlAction::TransportJumpBeat(beat_idx) => {
+                self.current_time = self.calculate_time_at_beat(ctx, beat_idx as u16);
             }
-            ControlCommand::TransportSeekBeat(beat_idx) => {
-                self.current_time = self.calculate_time_at_beat(beat_idx);
+            ControlAction::TransportSeekBeat(beat_idx) => {
+                self.current_time = self.calculate_time_at_beat(ctx, beat_idx as u16);
                 self.current_time
                     .sub_us(ctx.transport.us_to_next_beat as u64)
             }
-            ControlCommand::LoadCue(cue) => self.cue = cue.clone(),
             _ => {}
         }
-        return Ok(());
     }
 
-    fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
+    fn send_buffer(&mut self, ctx: &AudioSourceContext<'_>) -> Result<&[f32], jack::Error> {
         let last_cycle_frame = self.current_time.clone();
 
         if self.active {
             self.current_time
                 .add_progress((ctx.frame_size * self.frame_rate * 65536 / ctx.sample_rate) as u16);
-        }
-        for event in self
-            .cue
-            .get_beat(ctx.beat.next_beat_idx)
-            .unwrap_or(Beat::empty())
-            .events_filter(|e| matches!(e, BeatEvent::TimecodeEvent { .. }))
-        {
-            if let BeatEvent::TimecodeEvent { h, m, s, f } = event {
-                // if this cycle will run over the edge into next beat, we set the new timecode
-                // immediately AND restart the frame progress from 0. This is important, as
-                // otherwise, the frame time would change mid-frame, and confusion follows.
-                // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
-                // frame starts up to 1 whole cycle too early, but it is negligible, as the
-                // normal accuracy is only 1/fps (>33ms)
-                if ctx.will_overrun_frame() {
-                    self.active = true;
-                    self.current_time = TimecodeInstant {
-                        frame_rate: self.frame_rate,
-                        h: h as i16,
-                        m: m as i16,
-                        s: s as i16,
-                        f: f as i16,
-                        frame_progress: 0,
-                    };
-                }
-            }
         }
 
         if !ctx.transport.running || !self.active {
@@ -270,5 +234,27 @@ impl audio::source::AudioSource for TimecodeSource {
 
         return Ok(&self.frame_buffer
             [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
+    }
+
+    fn event_occured(&mut self, ctx: &AudioSourceContext<'_>, event: common::event::Event) {
+        if let Some(EventDescription::TimecodeEvent { h, m, s, f }) = event.event {
+            // if this cycle will run over the edge into next beat, we set the new timecode
+            // immediately AND restart the frame progress from 0. This is important, as
+            // otherwise, the frame time would change mid-frame, and confusion follows.
+            // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
+            // frame starts up to 1 whole cycle too early, but it is negligible, as the
+            // normal accuracy is only 1/fps (>33ms)
+            if ctx.will_overrun_frame() {
+                self.active = true;
+                self.current_time = TimecodeInstant {
+                    frame_rate: self.frame_rate,
+                    h: h as i16,
+                    m: m as i16,
+                    s: s as i16,
+                    f: f as i16,
+                    frame_progress: 0,
+                };
+            }
+        }
     }
 }
