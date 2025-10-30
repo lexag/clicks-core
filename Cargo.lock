@@ -76,7 +76,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 [[package]]
 name = "beat"
 version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#0a855834497838a4afefc21d82863825dff9eefa"
+source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#d56886d57c69d4db1fc7cc5c60b9eda02a2e4e5b"
 dependencies = [
  "serde",
  "serde_json",
@@ -204,7 +204,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "common"
 version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#0a855834497838a4afefc21d82863825dff9eefa"
+source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#d56886d57c69d4db1fc7cc5c60b9eda02a2e4e5b"
 dependencies = [
  "beat",
  "cue",
@@ -238,7 +238,7 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 [[package]]
 name = "cue"
 version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#0a855834497838a4afefc21d82863825dff9eefa"
+source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#d56886d57c69d4db1fc7cc5c60b9eda02a2e4e5b"
 dependencies = [
  "beat",
  "event",
@@ -266,7 +266,7 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 [[package]]
 name = "event"
 version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#0a855834497838a4afefc21d82863825dff9eefa"
+source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#d56886d57c69d4db1fc7cc5c60b9eda02a2e4e5b"
 dependencies = [
  "mem",
  "serde",
@@ -390,7 +390,7 @@ dependencies = [
 [[package]]
 name = "local"
 version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#0a855834497838a4afefc21d82863825dff9eefa"
+source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#d56886d57c69d4db1fc7cc5c60b9eda02a2e4e5b"
 dependencies = [
  "beat",
  "bitflags 2.10.0",
@@ -422,7 +422,7 @@ checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 [[package]]
 name = "mem"
 version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#0a855834497838a4afefc21d82863825dff9eefa"
+source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#d56886d57c69d4db1fc7cc5c60b9eda02a2e4e5b"
 dependencies = [
  "bitflags 2.10.0",
  "serde",
@@ -527,7 +527,7 @@ dependencies = [
 [[package]]
 name = "protocol"
 version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#0a855834497838a4afefc21d82863825dff9eefa"
+source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#d56886d57c69d4db1fc7cc5c60b9eda02a2e4e5b"
 dependencies = [
  "beat",
  "bitflags 2.10.0",

@@ -150,7 +150,9 @@ impl TimecodeSource {
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            while cursor.at_or_before(beat_idx as u16) && let Some(event) = cursor.get_next() {
+            while cursor.at_or_before(beat_idx as u16)
+                && let Some(event) = cursor.get_next()
+            {
                 if let Some(EventDescription::TimecodeEvent { h, m, s, f }) = event.event {
                     time.set_time(h as usize, m as usize, s as usize, f as usize);
                     time_off_us = 0;
@@ -230,7 +232,9 @@ impl audio::source::AudioSource for TimecodeSource {
             [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
     }
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
+
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         if let Some(EventDescription::TimecodeEvent { h, m, s, f }) = event.event {
             // if this cycle will run over the edge into next beat, we set the new timecode
             // immediately AND restart the frame progress from 0. This is important, as
@@ -238,17 +242,15 @@ impl audio::source::AudioSource for TimecodeSource {
             // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
             // frame starts up to 1 whole cycle too early, but it is negligible, as the
             // normal accuracy is only 1/fps (>33ms)
-            if ctx.will_overrun_frame() {
-                self.active = true;
-                self.current_time = TimecodeInstant {
-                    frame_rate: self.frame_rate,
-                    h: h as i16,
-                    m: m as i16,
-                    s: s as i16,
-                    f: f as i16,
-                    frame_progress: 0,
-                };
-            }
+            self.active = true;
+            self.current_time = TimecodeInstant {
+                frame_rate: self.frame_rate,
+                h: h as i16,
+                m: m as i16,
+                s: s as i16,
+                f: f as i16,
+                frame_progress: 0,
+            };
         }
     }
 }

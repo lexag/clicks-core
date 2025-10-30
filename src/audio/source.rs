@@ -49,6 +49,7 @@ pub trait AudioSource: Send {
     fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState;
 
     fn event_occured(&mut self, ctx: &AudioSourceContext, event: Event);
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: Event);
 
     fn silence(&self, length: usize) -> &[f32] {
         &[0f32; 2048][0..length]

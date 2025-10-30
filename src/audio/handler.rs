@@ -1,8 +1,9 @@
 use crate::{
+    CrossbeamNetwork,
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
-    logger, CrossbeamNetwork,
+    logger,
 };
 use common::{
     cue::Show,

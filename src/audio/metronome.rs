@@ -160,4 +160,6 @@ impl audio::source::AudioSource for Metronome {
             _ => {}
         }
     }
+
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
 }

@@ -84,11 +84,11 @@ impl PlaybackHandler {
                 channel_idx,
                 clip_idx: _,
                 sample: _,
-            }) = event.event && 
-                channel_idx == channel as u16 {
-                    clips_in_cue += 1;
-                }
-            
+            }) = event.event
+                && channel_idx == channel as u16
+            {
+                clips_in_cue += 1;
+            }
         }
 
         clips_in_cue
@@ -157,11 +157,12 @@ impl PlaybackHandler {
                 clip_idx,
                 sample: _,
             }) = event.event
-            && !clips[channel_idx as usize].contains(&(clip_idx as usize)) {
-                    clips[channel_idx as usize].push(clip_idx as usize);
-                }
+                && !clips[channel_idx as usize].contains(&(clip_idx as usize))
+            {
+                clips[channel_idx as usize].push(clip_idx as usize);
             }
-        
+        }
+
         clips
     }
 
@@ -287,7 +288,9 @@ impl PlaybackDevice {
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            while cursor.at_or_before(i) && let Some(event) = cursor.get_next() {
+            while cursor.at_or_before(i)
+                && let Some(event) = cursor.get_next()
+            {
                 match event.event {
                     Some(EventDescription::PlaybackEvent {
                         channel_idx,
@@ -379,16 +382,16 @@ impl AudioSource for PlaybackDevice {
         })
     }
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
-        // FIXME: these event handlers really care about the next beat and not the current, because
-        // they need to start playing sliiiightly early to be in sync
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         match event.event {
             Some(EventDescription::PlaybackEvent {
                 channel_idx,
                 clip_idx,
                 sample,
             }) => {
-                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {return;}
+                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {
+                    return;
+                }
                 // if this cycle will run over the edge into next beat, we start playback
                 // slightly before start of audio clip, so it aligns on the downbeat
                 // sample.
@@ -403,10 +406,14 @@ impl AudioSource for PlaybackDevice {
                 }
             }
             Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
-                if channel_idx != self.channel_idx {return;}
+                if channel_idx != self.channel_idx {
+                    return;
+                }
                 self.active = false;
             }
             _ => {}
         }
     }
+
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
 }

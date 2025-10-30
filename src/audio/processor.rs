@@ -1,5 +1,6 @@
 use common::{
     cue::{Cue, Show, ShowSkeleton},
+    event::EventCursor,
     local::{
         config::{LogContext, LogKind},
         status::CombinedStatus,
@@ -10,9 +11,11 @@ use common::{
 use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
 
 use crate::{
+    CrossbeamNetwork,
     audio::source::{AudioSource, AudioSourceContext, SourceConfig},
-    logger, CrossbeamNetwork,
+    logger,
 };
+use std::thread::current;
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
@@ -43,16 +46,13 @@ impl AudioProcessor {
     }
 
     fn send_all_status(&self) {
-        let _ = self.cbnet.notify(Message::CueData(self.status.cue.clone()));
-        let _ = self
-            .cbnet
+        self.cbnet.notify(Message::CueData(self.status.cue));
+        self.cbnet
             .notify(Message::ShowData(ShowSkeleton::new(self.status.show)));
-        let _ = self
-            .cbnet
-            .notify(Message::BeatData(self.status.beat_state().clone()));
-        let _ = self
-            .cbnet
-            .notify(Message::TransportData(self.status.transport.clone()));
+        self.cbnet
+            .notify(Message::BeatData(self.status.beat_state()));
+        self.cbnet
+            .notify(Message::TransportData(self.status.transport));
     }
 
     fn notify_push(&mut self, message_type: MessageType) {
@@ -69,7 +69,7 @@ impl AudioProcessor {
 
     fn load_cue(&mut self, cue: Cue) {
         self.status.transport.running = false;
-        self.status.cue.cue = cue.clone();
+        self.status.cue.cue = cue;
 
         self.cbnet.command(ControlAction::TransportStop);
         self.cbnet.command(ControlAction::TransportZero);
@@ -104,26 +104,25 @@ impl AudioProcessor {
             }
 
             ControlAction::LoadCueFromSelfIndex => {
-                let _ = self
-                    .cbnet
+                self.cbnet
                     .command(ControlAction::LoadCueByIndex(self.status.cue.cue_idx as u8));
             }
             ControlAction::LoadCueByIndex(idx) => {
                 if idx < self.status.show.cues.len() as u8 {
-                    self.load_cue(self.status.show.cues[idx as usize].clone());
+                    self.load_cue(self.status.show.cues[idx as usize]);
                     self.status.cue.cue_idx = idx as u16;
                 }
             }
             ControlAction::LoadPreviousCue => {
                 if self.status.cue.cue_idx > 0 {
                     self.status.cue.cue_idx -= 1;
-                    let _ = self.cbnet.command(ControlAction::LoadCueFromSelfIndex);
+                    self.cbnet.command(ControlAction::LoadCueFromSelfIndex);
                 }
             }
             ControlAction::LoadNextCue => {
                 if self.status.cue.cue_idx as usize + 1 < self.status.show.cues.len() {
                     self.status.cue.cue_idx += 1;
-                    let _ = self.cbnet.command(ControlAction::LoadCueFromSelfIndex);
+                    self.cbnet.command(ControlAction::LoadCueFromSelfIndex);
                 }
             }
 
@@ -146,7 +145,7 @@ impl AudioProcessor {
         // Pass on commands to all children
         // to do source specific implementations
         for source in &mut self.sources {
-            let _ = source.source_device.command(&self.ctx, command.clone());
+            source.source_device.command(&self.ctx, command.clone());
         }
 
         self.compile_child_statuses();
@@ -161,6 +160,7 @@ impl AudioProcessor {
     }
 
     fn compile_child_statuses(&mut self) {
+        let current_beat = self.status.beat_state().beat_idx;
         for (source, status) in self.sources.iter_mut().zip(self.status.sources.iter_mut()) {
             *status = source.source_device.get_status(&self.ctx);
         }
@@ -172,6 +172,10 @@ impl AudioProcessor {
             .vlt(self.status.transport.vlt);
 
         self.status.transport.ltc = self.status.time_state();
+
+        if self.status.beat_state().beat_idx != current_beat {
+            self.send_beat_events_to_children(self.status.beat_state().beat_idx, false);
+        }
     }
 
     // Get audio buffer from source[idx] and copy it to the JACK client output buffer.
@@ -184,19 +188,19 @@ impl AudioProcessor {
             let gain = if self.status.transport.playrate_percent != 100 && idx != 0 {
                 0.0
             } else {
-                source.get_gain_mult().clone()
+                source.get_gain_mult()
             };
-            for i in 0..out_buf.len() {
-                out_buf[i] *= gain;
+            for sample in out_buf {
+                *sample *= gain;
             }
-            return Control::Continue;
+            Control::Continue
         } else {
             logger::log(
                 format!("Audio error occured in source {}.", idx),
                 LogContext::AudioProcessor,
                 LogKind::Error,
             );
-            return Control::Quit;
+            Control::Quit
         }
     }
 
@@ -206,9 +210,25 @@ impl AudioProcessor {
             frame_size: ps.n_frames() as usize,
             sample_rate: c.sample_rate(),
             beat: self.status.beat_state(),
-            transport: self.status.transport.clone(),
+            transport: self.status.transport,
             cbnet: self.cbnet.clone(),
-            cue: Box::new(self.status.cue.cue.clone()),
+            cue: Box::new(self.status.cue.cue),
+        }
+    }
+
+    fn send_beat_events_to_children(&mut self, beat_idx: u16, pre_event: bool) {
+        let mut cursor = EventCursor::new(&self.status.cue.cue.events);
+        cursor.seek(beat_idx);
+        while cursor.at_or_before(beat_idx)
+            && let Some(event) = cursor.get_next()
+        {
+            for source in &mut self.sources {
+                if pre_event {
+                    source.source_device.event_will_occur(&self.ctx, event);
+                } else {
+                    source.source_device.event_occured(&self.ctx, event);
+                }
+            }
         }
     }
 }
@@ -251,6 +271,11 @@ impl ProcessHandler for AudioProcessor {
             self.cbnet.command(ControlAction::TransportZero);
         }
 
+        // Warn of upcoming events
+        if self.ctx.will_overrun_frame() {
+            self.send_beat_events_to_children(self.status.beat_state().next_beat_idx, true);
+        }
+
         self.update_context(c, ps);
         // Get audio frame buffers from all children and play in correct port
         for i in 0..self.sources.len() {
@@ -264,6 +289,6 @@ impl ProcessHandler for AudioProcessor {
             self.status_changed_flag = false;
         }
 
-        return Control::Continue;
+        Control::Continue
     }
 }
