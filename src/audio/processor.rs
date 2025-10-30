@@ -232,7 +232,7 @@ impl AudioProcessor {
     }
 }
 
-impl ProcessHandler for AudioProcessor<'_> {
+impl ProcessHandler for AudioProcessor {
     fn process(&mut self, c: &Client, ps: &ProcessScope) -> Control {
         // Handle channel commands
         loop {

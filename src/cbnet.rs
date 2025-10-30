@@ -1,5 +1,5 @@
 use common::protocol::{message::Message, request::ControlAction};
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 
 #[derive(Clone)]
 pub struct CrossbeamNetwork {

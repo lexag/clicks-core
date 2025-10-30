@@ -288,9 +288,7 @@ impl PlaybackDevice {
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            while cursor.at_or_before(i)
-                && let Some(event) = cursor.get_next()
-            {
+            while cursor.at_or_before(i) && let Some(event) = cursor.get_next() {
                 match event.event {
                     Some(EventDescription::PlaybackEvent {
                         channel_idx,
@@ -357,11 +355,11 @@ impl AudioSource for PlaybackDevice {
 
             ControlAction::TransportJumpBeat(beat_idx) => {
                 (self.current_clip, self.active, self.current_sample) =
-                    self.calculate_time_at_beat(ctx, beat_idx as u16);
+                    self.calculate_time_at_beat(ctx, beat_idx);
             }
             ControlAction::TransportSeekBeat(beat_idx) => {
                 (self.current_clip, self.active, self.current_sample) =
-                    self.calculate_time_at_beat(ctx, beat_idx as u16);
+                    self.calculate_time_at_beat(ctx, beat_idx);
                 // TODO: Support multiple and mixed sample rates
                 self.current_sample -= (ctx.transport.us_to_next_beat as i32) * 48 / 1000
             }

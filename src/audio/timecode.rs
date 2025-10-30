@@ -150,9 +150,7 @@ impl TimecodeSource {
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            while cursor.at_or_before(beat_idx as u16)
-                && let Some(event) = cursor.get_next()
-            {
+            while cursor.at_or_before(beat_idx as u16) && let Some(event) = cursor.get_next() {
                 if let Some(EventDescription::TimecodeEvent { h, m, s, f }) = event.event {
                     time.set_time(h as usize, m as usize, s as usize, f as usize);
                     time_off_us = 0;
