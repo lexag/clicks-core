@@ -79,22 +79,16 @@ impl PlaybackHandler {
         }
         let mut clips_in_cue = 0;
         let mut cursor = EventCursor::new(&cue.events);
-        loop {
-            let event = cursor.get_next();
-            if event.is_null() {
-                break;
-            }
-
+        while let Some(event) = cursor.get_next() {
             if let Some(EventDescription::PlaybackEvent {
                 channel_idx,
                 clip_idx: _,
                 sample: _,
-            }) = event.event
-            {
-                if channel_idx == channel as u16 {
+            }) = event.event && 
+                channel_idx == channel as u16 {
                     clips_in_cue += 1;
                 }
-            }
+            
         }
 
         clips_in_cue
@@ -127,7 +121,7 @@ impl PlaybackHandler {
                         );
                         return 0.0;
                     }
-                    return sample.expect("Err already handled.");
+                    sample.expect("Err already handled.")
                 })
                 .collect(),
             hound::SampleFormat::Int => reader
@@ -141,11 +135,11 @@ impl PlaybackHandler {
                         );
                         return 0.0;
                     }
-                    return (sample.expect("Err already handled.") as f32).div(32768.0);
+                    (sample.expect("Err already handled.") as f32).div(32768.0)
                 })
                 .collect(),
         };
-        return buf;
+        buf
     }
 
     // Returns a vector indexed by channel where each element is that channel's list of clip idxs
@@ -157,24 +151,18 @@ impl PlaybackHandler {
             clips.push(Vec::new());
         }
         let mut cursor = EventCursor::new(&cue.events);
-        loop {
-            let event = cursor.get_next();
-            if event.is_null() {
-                break;
-            }
-
+        while let Some(event) = cursor.get_next() {
             if let Some(EventDescription::PlaybackEvent {
                 channel_idx,
                 clip_idx,
                 sample: _,
             }) = event.event
-            {
-                if !clips[channel_idx as usize].contains(&(clip_idx as usize)) {
+            && !clips[channel_idx as usize].contains(&(clip_idx as usize)) {
                     clips[channel_idx as usize].push(clip_idx as usize);
                 }
             }
-        }
-        return clips;
+        
+        clips
     }
 
     pub fn load_show(&mut self, show: Show) {
@@ -190,9 +178,9 @@ impl PlaybackHandler {
             .collect();
 
         self.clips.clear();
-        for channel in 0..self.num_channels {
+        for (channel, mc_channel) in max_clips.iter().enumerate().take(self.num_channels) {
             self.clips.push(Vec::new());
-            for clip_idx in 0..max_clips[channel] {
+            for _ in 0..*mc_channel {
                 self.clips[channel].push(AudioClip::new());
             }
         }
@@ -214,7 +202,7 @@ impl PlaybackHandler {
                 Box::new(device),
             ));
         }
-        return devices;
+        devices
     }
 
     pub fn load_cue(&self, cue: Cue) {
@@ -237,14 +225,14 @@ mod tests {
 
     fn clips_counter() {
         let pbh = PlaybackHandler::new(PathBuf::new(), 32);
-        for length in [0, 1, 2, 100] {
+        for length in [0, 1, 2, 56, 100] {
             for channel in (0..34).step_by(2) {
                 let mut cue = Cue::empty();
                 for i in 0..length {
                     cue.events.set(
-                        i,
+                        i.min(63),
                         Event::new(
-                            i as u16,
+                            i as u16 * 2,
                             EventDescription::PlaybackEvent {
                                 channel_idx: channel,
                                 clip_idx: 0,
@@ -256,7 +244,7 @@ mod tests {
                 if channel <= 32 {
                     assert_eq!(
                         pbh.num_channel_clips_in_cue(&cue, channel as usize),
-                        length as usize
+                        length.min(64) as usize
                     );
                 } else {
                     assert_eq!(pbh.num_channel_clips_in_cue(&cue, channel as usize), 0);
@@ -299,8 +287,7 @@ impl PlaybackDevice {
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            while cursor.at_or_before(i as u16) {
-                let event = cursor.get_next();
+            while cursor.at_or_before(i) && let Some(event) = cursor.get_next() {
                 match event.event {
                     Some(EventDescription::PlaybackEvent {
                         channel_idx,
@@ -326,19 +313,19 @@ impl PlaybackDevice {
         }
         // TODO: support multiple and resampled sample rates
         running_sample += time_off_us as i32 * 48 / 1000;
-        return (running_clip as usize, running_active, running_sample);
+        (running_clip as usize, running_active, running_sample)
     }
 }
 
 impl AudioSource for PlaybackDevice {
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         if !ctx.transport.running {
-            return Ok(&self.silence(ctx.frame_size));
+            return Ok(self.silence(ctx.frame_size));
         }
 
         // If currently not playing or prerolling before playing, return silence
         if !self.active || self.current_sample < 0 {
-            return Ok(&self.silence(ctx.frame_size));
+            return Ok(self.silence(ctx.frame_size));
         }
 
         // If about to run out of clip length, return silence and stop playback
@@ -346,14 +333,14 @@ impl AudioSource for PlaybackDevice {
             > self.clips[self.current_clip].get_length() as i32
         {
             self.active = false;
-            return Ok(&self.silence(ctx.frame_size));
+            return Ok(self.silence(ctx.frame_size));
         }
 
         // All is well, return clip audio
         let buf = self.clips[self.current_clip]
             .read_buffer_slice(self.current_sample as u32, ctx.frame_size);
         self.current_sample += ctx.frame_size as i32;
-        return Ok(&buf[0..ctx.frame_size]);
+        Ok(&buf[0..ctx.frame_size])
     }
 
     fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
@@ -367,11 +354,11 @@ impl AudioSource for PlaybackDevice {
 
             ControlAction::TransportJumpBeat(beat_idx) => {
                 (self.current_clip, self.active, self.current_sample) =
-                    self.calculate_time_at_beat(ctx, beat_idx as u16);
+                    self.calculate_time_at_beat(ctx, beat_idx);
             }
             ControlAction::TransportSeekBeat(beat_idx) => {
                 (self.current_clip, self.active, self.current_sample) =
-                    self.calculate_time_at_beat(ctx, beat_idx as u16);
+                    self.calculate_time_at_beat(ctx, beat_idx);
                 // TODO: Support multiple and mixed sample rates
                 self.current_sample -= (ctx.transport.us_to_next_beat as i32) * 48 / 1000
             }
@@ -401,7 +388,7 @@ impl AudioSource for PlaybackDevice {
                 clip_idx,
                 sample,
             }) => {
-                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {}
+                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {return;}
                 // if this cycle will run over the edge into next beat, we start playback
                 // slightly before start of audio clip, so it aligns on the downbeat
                 // sample.
@@ -416,7 +403,7 @@ impl AudioSource for PlaybackDevice {
                 }
             }
             Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
-                if channel_idx != self.channel_idx {}
+                if channel_idx != self.channel_idx {return;}
                 self.active = false;
             }
             _ => {}

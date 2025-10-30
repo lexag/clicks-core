@@ -72,7 +72,8 @@ pub fn log(msg: String, context: LogContext, kind: LogKind) {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let systime_str = format_hms(systime).str();
+    let hms_time = format_hms(systime);
+    let systime_str = hms_time.str();
 
     let mut file = match std::fs::OpenOptions::new()
         .write(true)
@@ -80,7 +81,7 @@ pub fn log(msg: String, context: LogContext, kind: LogKind) {
         .open("log.txt")
     {
         Ok(val) => val,
-        Err(err) => return,
+        Err(_err) => return,
     };
 
     let mut log_line = format!("[{}] {}: {}\n", systime_str, kind.to_string(), msg);

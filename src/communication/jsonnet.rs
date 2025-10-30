@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     net::{IpAddr, SocketAddr},
     str::FromStr,
 };
@@ -19,6 +20,7 @@ use common::{
     },
     protocol::{message::Message, request::Request},
 };
+use core::fmt;
 
 pub struct JsonNetHandler {
     port: NetworkPort,
@@ -45,11 +47,10 @@ impl JsonNetHandler {
     }
 
     pub fn publish_subscribers(&mut self) {
-        let subscribers_slice = &[None; 32][0..self.subscribers.len()];
-        self.subscribers
-            .copy_from_slice(&self.subscribers.as_slice()[0..self.subscribers.len()]);
+        let subs_slice: [Option<SubscriberInfo>; 32] =
+            std::array::from_fn(|i| self.subscribers.get(i).cloned().map(Some).unwrap_or(None));
         self.notify(Message::NetworkChanged(NetworkStatus {
-            subscribers: *subscribers_slice,
+            subscribers: subs_slice,
         }));
     }
 }
@@ -60,7 +61,9 @@ impl CommunicationInterface for JsonNetHandler {
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
             for subscriber in &mut self.subscribers {
-                if subscriber.address == IpAddress::new(&src.ip().to_string(), src.port()) {
+                if Some(subscriber.address.clone())
+                    == IpAddress::from_str_and_port(&src.ip().to_string(), src.port())
+                {
                     subscriber.last_contact = Utc::now().timestamp() as u128;
                 }
             }
@@ -90,7 +93,9 @@ impl CommunicationInterface for JsonNetHandler {
                         logger::log(
                             format!(
                                 "New subscriber: {} at [{}] subscribing to {:?}.",
-                                info.identifier, info.address, info.message_kinds
+                                info.identifier.str(),
+                                info.address,
+                                info.message_kinds
                             ),
                             LogContext::Network,
                             LogKind::Note,
@@ -128,7 +133,7 @@ impl CommunicationInterface for JsonNetHandler {
     }
 
     fn notify(&mut self, notification: Message) {
-        if false && notification.to_type() != MessageType::TransportChanged {
+        if false && notification.to_type() != MessageType::TransportData {
             logger::log(
                 format!("Sending network message: {notification:?}"),
                 LogContext::Network,
@@ -156,7 +161,7 @@ impl CommunicationInterface for JsonNetHandler {
                         .expect("notification has trivial derived conversion")
                         .as_bytes(),
                     SocketAddr::new(
-                        IpAddr::from_str(&subscriber.address.addr_as_str())
+                        IpAddr::from_str(&format!("{}", &subscriber.address).to_string())
                             .expect("all subscriber addresses are santizied earlier"),
                         subscriber.address.port,
                     ),

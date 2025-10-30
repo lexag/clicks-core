@@ -1,18 +1,18 @@
-use common::{command::ControlCommand, status::Notification};
+use common::protocol::{message::Message, request::ControlAction};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 #[derive(Clone)]
 pub struct CrossbeamNetwork {
-    cmd_tx: Sender<ControlCommand>,
-    pub cmd_rx: Receiver<ControlCommand>,
-    notif_tx: Sender<Notification>,
-    pub notif_rx: Receiver<Notification>,
+    cmd_tx: Sender<ControlAction>,
+    pub cmd_rx: Receiver<ControlAction>,
+    notif_tx: Sender<Message>,
+    pub notif_rx: Receiver<Message>,
 }
 
 impl CrossbeamNetwork {
     pub fn new() -> Self {
-        let (cmd_tx, cmd_rx): (Sender<ControlCommand>, Receiver<ControlCommand>) = unbounded();
-        let (notif_tx, notif_rx): (Sender<Notification>, Receiver<Notification>) = unbounded();
+        let (cmd_tx, cmd_rx): (Sender<ControlAction>, Receiver<ControlAction>) = unbounded();
+        let (notif_tx, notif_rx): (Sender<Message>, Receiver<Message>) = unbounded();
         Self {
             cmd_tx,
             cmd_rx,
@@ -21,11 +21,11 @@ impl CrossbeamNetwork {
         }
     }
 
-    pub fn notify(&self, notif: Notification) {
+    pub fn notify(&self, notif: Message) {
         self.notif_tx.try_send(notif);
     }
 
-    pub fn command(&self, cmd: ControlCommand) {
+    pub fn command(&self, cmd: ControlAction) {
         self.cmd_tx.try_send(cmd);
     }
 }

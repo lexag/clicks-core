@@ -73,7 +73,7 @@ impl audio::source::AudioSource for Metronome {
         };
         self.transport.us_to_next_beat =
             if scheduled_time > ctx.jack_time && scheduled_time < u64::MAX / 2 {
-                (scheduled_time - ctx.jack_time) as u16
+                (scheduled_time - ctx.jack_time) as u64
             } else {
                 0
             };
@@ -104,7 +104,7 @@ impl audio::source::AudioSource for Metronome {
                 } else {
                     self.last_beat_time = scheduled_time;
                 }
-                ctx.cbnet.notify(Message::BeatChanged(self.state.clone()));
+                ctx.cbnet.notify(Message::BeatData(self.state.clone()));
                 return Ok(
                     &self.click_buffers[if beat.count == 1 { 0 } else { 1 }][0..ctx.frame_size]
                 );

@@ -84,7 +84,7 @@ impl AudioHandler {
             .expect("Client is none is handled.")
             .as_client();
         let mut i_ports = client.ports(
-            Some(String::from_utf8(&self.config.client.name.content).unwrap_or_default()),
+            Some(self.config.client.name.str()),
             Some("32 bit float mono audio"),
             PortFlags::IS_OUTPUT,
         );
@@ -103,7 +103,7 @@ impl AudioHandler {
             .collect();
 
         let mut o_ports = client.ports(
-            Some(String::from_utf8(&self.config.server.system_name.content).unwrap_or_default()),
+            Some(self.config.server.system_name.str()),
             Some("32 bit float mono audio"),
             PortFlags::IS_INPUT,
         );
@@ -124,42 +124,30 @@ impl AudioHandler {
         return ports;
     }
 
-    pub fn get_connections(&self) -> Vec<(usize, usize)> {
+    pub fn get_connections(&self) -> [u32; 32] {
         let ports = self.get_ports();
-        return ports
-            .0
-            .iter()
-            .enumerate()
-            .map(|(a_idx, a_port)| {
-                ports
-                    .1
-                    .iter()
-                    .enumerate()
-                    .map(|(b_idx, b_port)| {
-                        if a_port
-                            .is_connected_to(
-                                &b_port.name().expect(
-                                    "Port names are unexposed and should never be incorrect.",
-                                ),
-                            )
-                            .unwrap_or_default()
-                        {
-                            (a_idx, b_idx)
-                        } else {
-                            (usize::MAX, usize::MAX)
-                        }
-                    })
-                    .collect::<Vec<(usize, usize)>>()
-            })
-            .flatten()
-            .filter(|(a, b)| *a < usize::MAX && *b < usize::MAX)
-            .collect();
+        let mut out = [0u32; 32];
+        for (a_idx, a_port) in ports.0.iter().enumerate() {
+            for (b_idx, b_port) in ports.1.iter().enumerate() {
+                if a_port
+                    .is_connected_to(
+                        &b_port
+                            .name()
+                            .expect("Port names are unexposed and should never be incorrect."),
+                    )
+                    .unwrap_or_default()
+                {
+                    out[a_idx] |= 0x01 << b_idx;
+                }
+            }
+        }
+        out
     }
 
-    pub fn try_route_ports(&mut self, from: usize, to: usize, connect: bool) -> bool {
+    pub fn try_route_ports(&mut self, from: u8, to: u8, connect: bool) -> bool {
         let ports = self.get_ports();
-        let p_from = ports.0[from].clone();
-        let p_to = ports.1[to].clone();
+        let p_from = ports.0[from as usize].clone();
+        let p_to = ports.1[to as usize].clone();
         let client = match &self.client {
             Some(val) => val.as_client(),
             None => return false,
@@ -193,7 +181,15 @@ impl AudioHandler {
 
     pub fn get_jack_status(&mut self) -> JACKStatus {
         self.jack_status.running = !self.client.is_none();
-        self.jack_status.available_devices = self.get_hw_devices();
+        let devices: [Option<AudioDevice>; 8] = std::array::from_fn(|i| {
+            self.get_hw_devices()
+                .get(i)
+                .cloned()
+                .map(Some)
+                .unwrap_or(None)
+        });
+
+        self.jack_status.available_devices = devices;
 
         if self.jack_status.running {
             let client = match &self.client {
@@ -222,10 +218,7 @@ impl AudioHandler {
         self.jack_server_process = match std::process::Command::new("jackd")
             .arg("-R")
             .args(["-d", "alsa"])
-            .args([
-                "-d",
-                &String::from_utf8(&self.config.server.device_id.content).unwrap_or_default(),
-            ])
+            .args(["-d", self.config.server.device_id.str()])
             .args(["-r", &self.config.server.sample_rate.to_string()])
             .spawn()
         {
@@ -236,7 +229,7 @@ impl AudioHandler {
 
     pub fn start_client(&mut self) -> Result<Client, ()> {
         let client_res = Client::new(
-            &String::from_utf8(&self.config.client.name.content).unwrap_or_default(),
+            self.config.client.name.str(),
             ClientOptions::NO_START_SERVER,
         );
         match client_res {
@@ -268,7 +261,7 @@ impl AudioHandler {
 
     pub fn collect_system_ports(&self, client: &Client) -> Vec<Port<Unowned>> {
         let mut ports = client.ports(
-            Some(&String::from_utf8(&self.config.server.system_name.content).unwrap_or_default()),
+            Some(self.config.server.system_name.str()),
             Some("32 bit float mono audio"),
             PortFlags::IS_INPUT,
         );
@@ -308,7 +301,7 @@ impl AudioHandler {
 
         for line in stdout.lines() {
             if line.trim_start().starts_with("card") {
-                if let Some(device) = AudioDevice::from_aplay_str(line.to_string()) {
+                if let Some(device) = AudioDevice::from_aplay_str(line) {
                     devices.push(device);
                 }
             }

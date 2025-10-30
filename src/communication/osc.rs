@@ -235,7 +235,7 @@ impl OscNetHandler {
             "seek" => {
                 if let Some(dest) = self.get_arg(0).int() {
                     Ok(vec![Request::ControlAction(
-                        ControlAction::TransportSeekBeat(dest as usize),
+                        ControlAction::TransportSeekBeat(dest as u16),
                     )])
                 } else {
                     Err(OscError::BadArg("beat index".to_string()))
@@ -244,7 +244,7 @@ impl OscNetHandler {
             "jump" => {
                 if let Some(dest) = self.get_arg(0).int() {
                     Ok(vec![Request::ControlAction(
-                        ControlAction::TransportJumpBeat(dest as usize),
+                        ControlAction::TransportJumpBeat(dest as u16),
                     )])
                 } else {
                     Err(OscError::BadArg("beat index".to_string()))
@@ -261,7 +261,7 @@ impl OscNetHandler {
             "load" => {
                 if let Some(cue_idx) = self.get_arg(0).int() {
                     Ok(vec![Request::ControlAction(ControlAction::LoadCueByIndex(
-                        cue_idx as usize,
+                        cue_idx as u8,
                     ))])
                 } else {
                     Err(OscError::BadArg("cue index".to_string()))
@@ -330,7 +330,7 @@ impl OscNetHandler {
         }
 
         match message {
-            Message::CueChanged(cue) => {
+            Message::CueData(cue) => {
                 vec![
                     osc_msg("/message/cue/index", OscType::Int(cue.cue_idx as i32)),
                     osc_msg(
@@ -339,15 +339,15 @@ impl OscNetHandler {
                     ),
                     osc_msg(
                         "/message/cue/ident",
-                        OscType::String(cue.cue.metadata.human_ident.str()),
+                        OscType::String(cue.cue.metadata.human_ident.str().to_string()),
                     ),
                     osc_msg(
                         "/message/cue/name",
-                        OscType::String(cue.cue.metadata.name.str()),
+                        OscType::String(cue.cue.metadata.name.str().to_string()),
                     ),
                 ]
             }
-            Message::BeatChanged(state) => {
+            Message::BeatData(state) => {
                 vec![
                     osc_msg(
                         "/message/transport/beat/index",

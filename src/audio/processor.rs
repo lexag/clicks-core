@@ -1,5 +1,5 @@
 use common::{
-    cue::{Cue, Show},
+    cue::{Cue, Show, ShowSkeleton},
     local::{
         config::{LogContext, LogKind},
         status::CombinedStatus,
@@ -43,28 +43,24 @@ impl AudioProcessor {
     }
 
     fn send_all_status(&self) {
+        let _ = self.cbnet.notify(Message::CueData(self.status.cue.clone()));
         let _ = self
             .cbnet
-            .notify(Message::CueChanged(self.status.cue.clone()));
+            .notify(Message::ShowData(ShowSkeleton::new(self.status.show)));
         let _ = self
             .cbnet
-            .notify(Message::ShowChanged(self.status.show.lightweight()));
+            .notify(Message::BeatData(self.status.beat_state().clone()));
         let _ = self
             .cbnet
-            .notify(Message::BeatChanged(self.status.beat_state().clone()));
-        let _ = self
-            .cbnet
-            .notify(Message::TransportChanged(self.status.transport.clone()));
+            .notify(Message::TransportData(self.status.transport.clone()));
     }
 
     fn notify_push(&mut self, message_type: MessageType) {
         self.cbnet.notify(match message_type {
-            MessageType::TransportChanged => {
-                Message::TransportChanged(self.status.transport.clone())
-            }
-            MessageType::BeatChanged => Message::BeatChanged(self.status.beat_state()),
-            MessageType::CueChanged => Message::CueChanged(self.status.cue.clone()),
-            MessageType::ShowChanged => Message::ShowChanged(self.status.show.clone()),
+            MessageType::TransportData => Message::TransportData(self.status.transport),
+            MessageType::BeatData => Message::BeatData(self.status.beat_state()),
+            MessageType::CueData => Message::CueData(self.status.cue),
+            MessageType::ShowData => Message::ShowData(ShowSkeleton::new(self.status.show)),
             _ => {
                 return;
             }
@@ -77,13 +73,13 @@ impl AudioProcessor {
 
         self.cbnet.command(ControlAction::TransportStop);
         self.cbnet.command(ControlAction::TransportZero);
-        self.notify_push(MessageType::CueChanged);
+        self.notify_push(MessageType::CueData);
     }
 
     fn load_show(&mut self, show: Show) {
         self.status.show = show;
         self.cbnet.command(ControlAction::LoadCueByIndex(0));
-        self.notify_push(MessageType::ShowChanged);
+        self.notify_push(MessageType::ShowData);
     }
 
     fn handle_command(&mut self, command: ControlAction) {
@@ -96,11 +92,11 @@ impl AudioProcessor {
             ControlAction::DumpStatus => self.send_all_status(),
             ControlAction::TransportStart => {
                 self.status.transport.running = true;
-                self.notify_push(MessageType::TransportChanged);
+                self.notify_push(MessageType::TransportData);
             }
             ControlAction::TransportStop => {
                 self.status.transport.running = false;
-                self.notify_push(MessageType::TransportChanged);
+                self.notify_push(MessageType::TransportData);
             }
 
             ControlAction::TransportSeekBeat(..) | ControlAction::TransportJumpBeat(..) => {
@@ -108,13 +104,13 @@ impl AudioProcessor {
             }
 
             ControlAction::LoadCueFromSelfIndex => {
-                let _ = self.cbnet.command(ControlAction::LoadCueByIndex(
-                    self.status.cue.cue_idx as usize,
-                ));
+                let _ = self
+                    .cbnet
+                    .command(ControlAction::LoadCueByIndex(self.status.cue.cue_idx as u8));
             }
             ControlAction::LoadCueByIndex(idx) => {
-                if idx < self.status.show.cues.len() {
-                    self.load_cue(self.status.show.cues[idx].clone());
+                if idx < self.status.show.cues.len() as u8 {
+                    self.load_cue(self.status.show.cues[idx as usize].clone());
                     self.status.cue.cue_idx = idx as u16;
                 }
             }
@@ -132,16 +128,16 @@ impl AudioProcessor {
             }
 
             ControlAction::SetChannelGain(channel_idx, gain) => {
-                self.sources[channel_idx].set_gain(gain);
+                self.sources[channel_idx as usize].set_gain(gain);
             }
 
             ControlAction::ChangeJumpMode(jumpmode) => {
                 self.status.transport.vlt = jumpmode.vlt(self.status.transport.vlt);
-                self.notify_push(MessageType::TransportChanged);
+                self.notify_push(MessageType::TransportData);
             }
             ControlAction::ChangePlayrate(playrate) => {
                 self.status.transport.playrate_percent = playrate;
-                self.notify_push(MessageType::TransportChanged);
+                self.notify_push(MessageType::TransportData);
             }
 
             _ => {}
@@ -157,8 +153,8 @@ impl AudioProcessor {
 
         match command.clone() {
             ControlAction::TransportZero => {
-                self.notify_push(MessageType::BeatChanged);
-                self.notify_push(MessageType::TransportChanged);
+                self.notify_push(MessageType::BeatData);
+                self.notify_push(MessageType::TransportData);
             }
             _ => {}
         }
@@ -217,7 +213,7 @@ impl AudioProcessor {
     }
 }
 
-impl ProcessHandler for AudioProcessor<'_> {
+impl ProcessHandler for AudioProcessor {
     fn process(&mut self, c: &Client, ps: &ProcessScope) -> Control {
         // Handle channel commands
         loop {
@@ -264,7 +260,7 @@ impl ProcessHandler for AudioProcessor<'_> {
         }
 
         if self.status.transport.running || self.status_changed_flag {
-            self.notify_push(MessageType::TransportChanged);
+            self.notify_push(MessageType::TransportData);
             self.status_changed_flag = false;
         }
 

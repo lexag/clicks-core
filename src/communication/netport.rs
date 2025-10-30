@@ -1,4 +1,5 @@
 use crate::logger;
+use common::local::config::{LogContext, LogKind};
 use local_ip_address::local_ip;
 use std::net::{SocketAddr, UdpSocket};
 
@@ -38,8 +39,8 @@ impl NetworkPort {
             Err(err) => {
                 logger::log(
                     format!("Subscriber send error: {err}"),
-                    logger::LogContext::Network,
-                    logger::LogKind::Error,
+                    LogContext::Network,
+                    LogKind::Error,
                 );
             }
         }

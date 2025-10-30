@@ -106,9 +106,9 @@ fn main() {
                 Request::ControlAction(cmd) => {
                     let _ = cbnet.command(cmd.clone());
                     match cmd {
-                        ControlAction::LoadCueByIndex(idx) => pbh.load_cue(show.cues[idx]),
+                        ControlAction::LoadCueByIndex(idx) => pbh.load_cue(show.cues[idx as usize]),
                         ControlAction::SetChannelGain(channel, gain) => {
-                            config.channels[channel].gain = gain;
+                            config.channels[channel as usize].gain = gain;
                             nh.notify(Message::ConfigurationChanged(config.clone()));
                         }
                         _ => {}
@@ -179,7 +179,7 @@ fn main() {
 
         if last_heartbeat_time.elapsed().gt(&Duration::from_secs(1)) {
             let heartbeat = Message::Heartbeat(Heartbeat {
-                common_version: common::VERSION.to_string(),
+                common_version: String8::new(common::VERSION),
                 system_version: String8::new(VERSION),
                 system_time: chrono::Utc::now().timestamp() as u64,
                 cpu_use_audio: ah.get_cpu_use(),
