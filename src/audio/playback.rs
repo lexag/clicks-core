@@ -288,7 +288,9 @@ impl PlaybackDevice {
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            while cursor.at_or_before(i) && let Some(event) = cursor.get_next() {
+            while cursor.at_or_before(i)
+                && let Some(event) = cursor.get_next()
+            {
                 match event.event {
                     Some(EventDescription::PlaybackEvent {
                         channel_idx,

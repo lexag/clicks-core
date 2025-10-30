@@ -13,8 +13,9 @@ use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowne
 use crate::{
     CrossbeamNetwork,
     audio::source::{AudioSource, AudioSourceContext, SourceConfig},
-    logger, CrossbeamNetwork,
+    logger,
 };
+use std::thread::current;
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
