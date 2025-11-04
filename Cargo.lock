@@ -185,6 +185,7 @@ dependencies = [
  "jack",
  "local-ip-address",
  "rosc",
+ "rppal",
  "serde",
  "serde_json",
 ]
@@ -198,6 +199,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "common"
 version = "1.0.1"
+source = "git+https://github.com/lexag/clicks-common.git?tag=v1.0.1#fd4bd6e604ea477f78a427ca15df4846bec59c06"
 dependencies = [
  "chrono",
  "serde",
@@ -478,6 +480,15 @@ dependencies = [
  "byteorder",
  "nom",
  "time",
+]
+
+[[package]]
+name = "rppal"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ce3b019009cff02cb6b0e96e7cc2e5c5b90187dc1a490f8ef1521d0596b026"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

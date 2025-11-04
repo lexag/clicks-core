@@ -4,6 +4,7 @@ mod audio;
 mod boot;
 mod cbnet;
 mod communication;
+mod hardware;
 mod logger;
 
 use common::{
@@ -41,6 +42,10 @@ struct Args {
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
+    if let Err(err) = hardware::display::display_test() {
+        println!("i2c error: {err}");
+    }
+    return;
     logger::init();
     let args = Args::parse();
 
