@@ -198,6 +198,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 [[package]]
 name = "common"
 version = "1.0.1"
+source = "git+https://github.com/lexag/clicks-common.git?tag=v1.0.1#fd4bd6e604ea477f78a427ca15df4846bec59c06"
 dependencies = [
  "chrono",
  "serde",

@@ -9,10 +9,7 @@ use common::{
     show::Show,
     status::AudioSourceState,
 };
-use std::{
-    fmt::Debug, ops::Div, path::PathBuf,
-    sync::Arc,
-};
+use std::{fmt::Debug, ops::Div, path::PathBuf, sync::Arc};
 
 const LOCAL_BUF_SIZE: usize = 48000;
 
@@ -285,7 +282,7 @@ impl PlaybackDevice {
     fn calculate_time_at_beat(&mut self, beat_idx: usize) -> (usize, bool, i32) {
         let mut running_active = false;
         let mut running_clip = 0;
-        let mut running_sample = 0;
+        let mut running_sample = 0_i64;
         let mut time_off_us = 0_u64;
         for i in 0..beat_idx {
             for event in self.cue.get_beat(i).unwrap_or_default().events {
@@ -296,7 +293,7 @@ impl PlaybackDevice {
                         sample,
                     } => {
                         if channel_idx == self.channel_idx {
-                            running_sample = sample;
+                            running_sample = sample as i64;
                             running_clip = clip_idx;
                             running_active = true;
                             time_off_us = 0;
@@ -313,8 +310,12 @@ impl PlaybackDevice {
             time_off_us += self.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         // TODO: support multiple and resampled sample rates
-        running_sample += time_off_us as i32 * 48 / 1000;
-        return (running_clip, running_active, running_sample);
+        running_sample += time_off_us as i64 * 48 / 1000;
+        (
+            running_clip,
+            running_active,
+            running_sample.min(i32::MAX as i64) as i32,
+        )
     }
 }
 
