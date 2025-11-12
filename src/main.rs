@@ -42,10 +42,10 @@ struct Args {
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
-    if let Err(err) = hardware::display::display_test() {
+    if let Err(err) = hardware::display::startup() {
         println!("i2c error: {err}");
     }
-    return;
+
     logger::init();
     let args = Args::parse();
 
