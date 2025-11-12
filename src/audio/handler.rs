@@ -40,16 +40,18 @@ impl AudioHandler {
         self.start_server();
         std::thread::sleep(std::time::Duration::from_secs(5));
         let client_res = self.start_client();
-        if client_res.is_err() {
-            logger::log(
-                "Could not open JACK client".to_string(),
-                common::config::LogContext::AudioHandler,
-                common::config::LogKind::Error,
-            );
-            self.shutdown();
-            return;
-        }
-        let client = client_res.expect("Err case handled above");
+        let client = match client_res {
+            Err(err) => {
+                logger::log(
+                    format!("Could not open JACK client: {:#?}", err),
+                    common::config::LogContext::AudioHandler,
+                    common::config::LogKind::Error,
+                );
+                self.shutdown();
+                return;
+            }
+            Ok(client) => client,
+        };
         let mut ports: (Vec<Port<AudioOut>>, Vec<Port<Unowned>>) = (vec![], vec![]);
         ports.0 = self.init_client_ports(&client);
         ports.1 = self.collect_system_ports(&client);

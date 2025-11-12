@@ -6,14 +6,17 @@ use ssd1306::{
 };
 
 use crate::VERSION;
-use common::VERSION as COMMON_VERSION;
+use common::{show::Show, VERSION as COMMON_VERSION};
 use core::fmt::Write;
 use linux_embedded_hal::I2cdev;
 use local_ip_address::local_ip;
 use ssd1306::size::DisplaySize128x64;
 use std::{net::IpAddr, str::FromStr, time::Duration};
 
-pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
+fn get_display() -> Result<
+    Ssd1306<I2CInterface<I2cdev>, DisplaySize128x64, TerminalMode>,
+    Box<dyn std::error::Error>,
+> {
     let i2cdev = I2cdev::new("/dev/i2c-1")?;
 
     let interface = ssd1306::I2CDisplayInterface::new(i2cdev);
@@ -25,17 +28,38 @@ pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
     .into_terminal_mode();
     display.init().unwrap();
     let _ = display.clear();
+    Ok(display)
+}
+
+pub fn show_load_failure(err: serde_json::Error) -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    ip_header(&mut display);
+    typewriter(&mut display, "Show load fail");
+    typewriter(&mut display, &format!("{:?}", err.classify()));
+    typewriter(&mut display, &format!("lin {}", err.line()));
+    typewriter(&mut display, &format!("col {}", err.column()));
+
+    Ok(())
+}
+
+pub fn show_load_success(show: Show) -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    ip_header(&mut display);
+    typewriter(&mut display, "Loaded show");
+    typewriter(&mut display, &show.metadata.name);
+    typewriter(&mut display, &format!("{} cues", show.cues.len()));
+
+    Ok(())
+}
+
+pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
     typewriter(&mut display, "Karspexet ClicKS");
     typewriter(&mut display, "");
     typewriter(&mut display, &format!("version {}", VERSION));
     typewriter(&mut display, &format!(" common {}", COMMON_VERSION));
     typewriter(&mut display, "");
-    typewriter(
-        &mut display,
-        &local_ip()
-            .unwrap_or(IpAddr::from_str("0.0.0.0")?)
-            .to_string(),
-    );
+    ip_header(&mut display);
     typewriter(&mut display, "port 8081");
 
     Ok(())
@@ -51,4 +75,16 @@ fn typewriter(
     }
     display.print_char('\n');
     std::thread::sleep(Duration::from_millis(5));
+}
+
+fn ip_header(
+    display: &mut Ssd1306<I2CInterface<I2cdev>, DisplaySize128x64, TerminalMode>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    typewriter(
+        display,
+        &local_ip()
+            .unwrap_or(IpAddr::from_str("0.0.0.0")?)
+            .to_string(),
+    );
+    Ok(())
 }

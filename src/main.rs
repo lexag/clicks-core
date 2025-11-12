@@ -8,7 +8,12 @@ mod hardware;
 mod logger;
 
 use common::{
-    self, command::ControlCommand, control::ControlMessage, network::Heartbeat, show::Show,
+    self,
+    command::ControlCommand,
+    control::ControlMessage,
+    cue::Cue,
+    network::Heartbeat,
+    show::{Show, ShowMetadata},
     status::Notification,
 };
 
@@ -81,7 +86,19 @@ fn main() {
     }
 
     let mut config = boot::get_config().expect("required to continue");
-    let show = Show::from_file(show_path.join("show.json")).unwrap_or_default();
+    let show = match Show::from_file(show_path.join("show.json")) {
+        Ok(show) => {
+            hardware::display::show_load_success(show.clone());
+            show
+        }
+        Err(err) => {
+            hardware::display::show_load_failure(err);
+            Show {
+                metadata: ShowMetadata::default(),
+                cues: vec![Cue::example(), Cue::example_loop()],
+            }
+        }
+    };
 
     let cbnet = CrossbeamNetwork::new();
 
