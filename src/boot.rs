@@ -47,43 +47,22 @@ pub fn log_boot_error(err: BootError) {
     );
 }
 
-pub fn find_update_path() -> Result<PathBuf, BootError> {
-    find_file_path("clicks.update")
+pub fn get_usb_update_path() -> Result<PathBuf, BootError> {
+    Ok(get_pwd()?.join("usb_memory/clicks.update"))
 }
-pub fn find_show_path() -> Result<PathBuf, BootError> {
-    find_file_path("clicks.show")
+pub fn get_usb_show_path() -> Result<PathBuf, BootError> {
+    Ok(get_pwd()?.join("usb_memory/clicks.update"))
+}
+pub fn get_show_path() -> Result<PathBuf, BootError> {
+    Ok(get_pwd()?.join("program_memory/clicks.show"))
 }
 
-pub fn find_file_path(file_name: &str) -> Result<PathBuf, BootError> {
-    let data_path = match std::process::Command::new("find")
-        .arg("/")
-        .arg("-name")
-        .arg(file_name)
-        .output()
-    {
-        Err(err) => {
-            return Err(BootError::FileFindFailure(format!("{err}")));
-        }
-        Ok(res) => {
-            let results = res.stdout.iter().map(|&c| c as char).collect::<String>();
-            let path = results.split('\n').nth(0).unwrap_or_default().trim();
-
-            if path.len() == 0 {
-                return Err(BootError::FileDoesNotExist);
-            } else {
-                logger::log(
-                    format!(
-                        "Found {} at {}",
-                        file_name,
-                        res.stdout.iter().map(|&c| c as char).collect::<String>()
-                    ),
-                    logger::LogContext::Boot,
-                    logger::LogKind::Note,
-                );
-                return Ok(PathBuf::from_str(path).expect("PathBuf cannot fail from_str"));
-            }
-        }
-    };
+fn get_pwd() -> Result<PathBuf, BootError> {
+    Ok(std::env::current_exe()
+        .map_err(|e| BootError::FileDoesNotExist)?
+        .parent()
+        .ok_or(BootError::FileDoesNotExist)?
+        .to_path_buf())
 }
 
 pub fn get_config_path() -> PathBuf {
@@ -150,22 +129,38 @@ pub fn copy_logs(path: PathBuf) -> Result<(), BootError> {
     }
 }
 
-pub fn try_patch() -> Result<bool, ()> {
-    let update_path = match find_update_path() {
-        Ok(val) => val,
-        Err(err) => return Ok(false),
-    };
-
+pub fn try_patch() -> bool {
     if let Ok(mut child) = std::process::Command::new("mv")
-        .arg(update_path)
+        .arg(match get_usb_update_path() {
+            Ok(path) => path,
+            Err(err) => return false,
+        })
         .arg(match std::env::current_exe() {
             Ok(path) => path,
-            Err(err) => return Err(()),
+            Err(err) => return false,
         })
         .spawn()
     {
         child.wait();
-        return Ok(true);
+        return true;
     }
-    return Ok(false);
+    return false;
+}
+
+pub fn try_load_usb_show() -> bool {
+    if let Ok(mut child) = std::process::Command::new("cp")
+        .arg(match get_usb_show_path() {
+            Ok(path) => path,
+            Err(err) => return false,
+        })
+        .arg(match get_show_path() {
+            Ok(path) => path,
+            Err(err) => return false,
+        })
+        .spawn()
+    {
+        child.wait();
+        return true;
+    }
+    return false;
 }

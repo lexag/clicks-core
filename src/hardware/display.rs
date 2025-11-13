@@ -7,7 +7,6 @@ use ssd1306::{
 
 use crate::VERSION;
 use common::{show::Show, VERSION as COMMON_VERSION};
-use core::fmt::Write;
 use linux_embedded_hal::I2cdev;
 use local_ip_address::local_ip;
 use ssd1306::size::DisplaySize128x64;
@@ -31,6 +30,26 @@ fn get_display() -> Result<
     Ok(display)
 }
 
+pub fn patch_success() -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    ip_header(&mut display);
+    typewriter(&mut display, "Update succeeded");
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Please reboot");
+
+    Ok(())
+}
+pub fn patch_failure() -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    ip_header(&mut display);
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Update failed");
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Something");
+    typewriter(&mut display, "went wrong");
+
+    Ok(())
+}
 pub fn show_load_failure(err: serde_json::Error) -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
     ip_header(&mut display);
@@ -61,6 +80,26 @@ pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
     typewriter(&mut display, "");
     ip_header(&mut display);
     typewriter(&mut display, "port 8081");
+
+    Ok(())
+}
+
+pub fn ask_patch() -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Update found");
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Update?");
+
+    Ok(())
+}
+
+pub fn ask_copy_show() -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    typewriter(&mut display, "");
+    typewriter(&mut display, "USB show found");
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Load to core?");
 
     Ok(())
 }

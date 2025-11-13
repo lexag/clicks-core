@@ -7,6 +7,7 @@ mod communication;
 mod hardware;
 mod logger;
 
+use boot::try_patch;
 use common::{
     self,
     command::ControlCommand,
@@ -47,37 +48,39 @@ struct Args {
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
-    if let Err(err) = hardware::display::startup() {
-        println!("i2c error: {err}");
-    }
-
     logger::init();
-    let args = Args::parse();
 
-    if boot::try_patch().is_ok_and(|b| b) {
-        logger::log(
-            "Patched version. Please reboot.".to_string(),
-            common::config::LogContext::Boot,
-            common::config::LogKind::Note,
-        );
-        return;
+    #[cfg(feature = "i2c-ui")]
+    {
+        if boot::get_usb_update_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
+            hardware::display::ask_patch();
+            if hardware::input::wait_yes_no() {
+                if boot::try_patch() {
+                    hardware::display::patch_success();
+                } else {
+                    hardware::display::patch_failure();
+                    return;
+                }
+            }
+        };
+        if boot::get_usb_show_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
+            hardware::display::ask_copy_show();
+            if hardware::input::wait_yes_no() {
+                boot::try_load_usb_show();
+            }
+        };
+        if let Err(err) = hardware::display::startup() {
+            println!("i2c error: {err}");
+        };
     }
 
-    let show_path = if args.show_path_override.is_empty() {
-        match boot::find_show_path() {
-            Ok(val) => val,
-            Err(err) => {
-                boot::log_boot_error(err);
-                return;
-            }
-        }
-    } else {
-        match PathBuf::from_str(&args.show_path_override) {
-            Ok(val) => val,
-            Err(err) => panic!("Incorrect path argument to show_path_override."),
+    let show_path = match boot::get_show_path() {
+        Ok(val) => val,
+        Err(err) => {
+            boot::log_boot_error(err);
+            return;
         }
     };
-
     // FIXME: ugly way to make sure that jackd is dead after last debug run
     // should not need to exist in normal operation, because power cycle will reset jackd anyway,
     // and that is the only in-use way to rerun the program
@@ -86,12 +89,14 @@ fn main() {
     }
 
     let mut config = boot::get_config().expect("required to continue");
-    let show = match Show::from_file(show_path.join("show.json")) {
+    let show = match Show::from_file(boot::get_show_path().unwrap_or_default()) {
         Ok(show) => {
+            #[cfg(feature = "i2c-ui")]
             hardware::display::show_load_success(show.clone());
             show
         }
         Err(err) => {
+            #[cfg(feature = "i2c-ui")]
             hardware::display::show_load_failure(err);
             Show {
                 metadata: ShowMetadata::default(),
