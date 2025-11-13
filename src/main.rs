@@ -7,7 +7,6 @@ mod communication;
 mod hardware;
 mod logger;
 
-use boot::try_patch;
 use common::{
     self,
     command::ControlCommand,
@@ -29,11 +28,7 @@ use crate::{
     },
 };
 use clap::Parser;
-use std::{
-    path::PathBuf,
-    str::FromStr,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
