@@ -10,7 +10,7 @@ pub struct HwButton: u8 {
 fn get_buttons() -> Result<HwButton, Box<dyn std::error::Error>> {
     let mut i2c = I2c::new()?;
     i2c.set_slave_address(0x55);
-    let mut buf = [0u8; 8];
+    let mut buf = [0u8; 1];
     i2c.read(&mut buf);
     Ok(HwButton::from_bits(buf[0]).unwrap_or_default())
 }
@@ -18,10 +18,10 @@ fn get_buttons() -> Result<HwButton, Box<dyn std::error::Error>> {
 pub fn wait_yes_no() -> bool {
     loop {
         let buttons = get_buttons().unwrap_or_default();
-        return if buttons.contains(HwButton::NO) {
-            false
-        } else {
-            true
-        };
+        if buttons.contains(HwButton::NO) {
+            return false;
+        } else if buttons.contains(HwButton::YES) {
+            return true;
+        }
     }
 }

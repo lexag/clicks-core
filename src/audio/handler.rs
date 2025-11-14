@@ -229,13 +229,13 @@ impl AudioHandler {
         };
     }
 
-    pub fn start_client(&mut self) -> Result<Client, ()> {
+    pub fn start_client(&mut self) -> Result<Client, jack::Error> {
         let client_res = Client::new(
             &self.config.client.name.to_string(),
             ClientOptions::NO_START_SERVER,
         );
         match client_res {
-            Err(err) => Err(()),
+            Err(err) => Err(err),
             Ok((client, status)) => {
                 logger::log(
                     format!("Opened JACK client ({status:?})"),

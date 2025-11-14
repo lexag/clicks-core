@@ -48,13 +48,17 @@ pub fn log_boot_error(err: BootError) {
 }
 
 pub fn get_usb_update_path() -> Result<PathBuf, BootError> {
-    Ok(get_pwd()?.join("usb_memory/clicks.update"))
+    Ok(get_usb_mountpoint()?.join("clicks.update"))
 }
 pub fn get_usb_show_path() -> Result<PathBuf, BootError> {
-    Ok(get_pwd()?.join("usb_memory/clicks.update"))
+    Ok(get_usb_mountpoint()?.join("clicks.show"))
 }
 pub fn get_show_path() -> Result<PathBuf, BootError> {
     Ok(get_pwd()?.join("program_memory/clicks.show"))
+}
+
+fn get_usb_mountpoint() -> Result<PathBuf, BootError> {
+    PathBuf::from_str("/media/usb_mem/").map_err(|e| BootError::FileDoesNotExist)
 }
 
 fn get_pwd() -> Result<PathBuf, BootError> {
@@ -148,7 +152,9 @@ pub fn try_patch() -> bool {
 }
 
 pub fn try_load_usb_show() -> bool {
+    println!("{:?}, {:?}", get_usb_show_path(), get_show_path());
     if let Ok(mut child) = std::process::Command::new("cp")
+        .arg("-r")
         .arg(match get_usb_show_path() {
             Ok(path) => path,
             Err(err) => return false,

@@ -47,26 +47,37 @@ fn main() {
 
     #[cfg(feature = "i2c-ui")]
     {
-        if boot::get_usb_update_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
-            hardware::display::ask_patch();
-            if hardware::input::wait_yes_no() {
-                if boot::try_patch() {
-                    hardware::display::patch_success();
-                } else {
-                    hardware::display::patch_failure();
-                    return;
+        std::thread::sleep(Duration::from_secs(2));
+        hardware::display::ask_usb();
+        if hardware::input::wait_yes_no() {
+            hardware::usb::mount();
+            if boot::get_usb_update_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
+                hardware::display::ask_patch();
+                if hardware::input::wait_yes_no() {
+                    if boot::try_patch() {
+                        hardware::display::patch_success();
+                        std::thread::sleep(Duration::from_secs(2));
+                    } else {
+                        hardware::display::patch_failure();
+                        return;
+                    }
                 }
-            }
-        };
-        if boot::get_usb_show_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
-            hardware::display::ask_copy_show();
-            if hardware::input::wait_yes_no() {
-                boot::try_load_usb_show();
-            }
-        };
-        if let Err(err) = hardware::display::startup() {
-            println!("i2c error: {err}");
-        };
+            };
+            if boot::get_usb_show_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
+                hardware::display::ask_copy_show();
+                if hardware::input::wait_yes_no() {
+                    if boot::try_load_usb_show() {
+                        hardware::display::generic_success();
+                    } else {
+                        hardware::display::generic_failure(
+                            "Could not copy show from usb".to_string(),
+                        );
+                    }
+                    std::thread::sleep(Duration::from_secs(3));
+                }
+            };
+            hardware::usb::unmount();
+        }
     }
 
     let show_path = match boot::get_show_path() {
@@ -84,7 +95,7 @@ fn main() {
     }
 
     let mut config = boot::get_config().expect("required to continue");
-    let show = match Show::from_file(boot::get_show_path().unwrap_or_default()) {
+    let show = match Show::from_file(boot::get_show_path().unwrap_or_default().join("show.json")) {
         Ok(show) => {
             #[cfg(feature = "i2c-ui")]
             hardware::display::show_load_success(show.clone());
@@ -99,6 +110,11 @@ fn main() {
             }
         }
     };
+    #[cfg(feature = "i2c-ui")]
+    {
+        std::thread::sleep(Duration::from_secs(5));
+        hardware::display::startup();
+    }
 
     let cbnet = CrossbeamNetwork::new();
 

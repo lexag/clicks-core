@@ -53,10 +53,13 @@ pub fn patch_failure() -> Result<(), Box<dyn std::error::Error>> {
 pub fn show_load_failure(err: serde_json::Error) -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
     ip_header(&mut display);
-    typewriter(&mut display, "Show load fail");
+    typewriter(&mut display, "Show load failed");
     typewriter(&mut display, &format!("{:?}", err.classify()));
-    typewriter(&mut display, &format!("lin {}", err.line()));
-    typewriter(&mut display, &format!("col {}", err.column()));
+    typewriter(
+        &mut display,
+        &format!("lin {} col {}", err.line(), err.column()),
+    );
+    typewriter(&mut display, &format!("{}", err));
 
     Ok(())
 }
@@ -84,6 +87,17 @@ pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+pub fn ask_usb() -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Load USB?");
+    typewriter(&mut display, "Plug in now");
+    typewriter(&mut display, "");
+    typewriter(&mut display, "YES/NO");
+
+    Ok(())
+}
+
 pub fn ask_patch() -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
     typewriter(&mut display, "");
@@ -100,6 +114,22 @@ pub fn ask_copy_show() -> Result<(), Box<dyn std::error::Error>> {
     typewriter(&mut display, "USB show found");
     typewriter(&mut display, "");
     typewriter(&mut display, "Load to core?");
+
+    Ok(())
+}
+
+pub fn generic_success() -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    typewriter(&mut display, "");
+    typewriter(&mut display, "Success!");
+    typewriter(&mut display, "");
+
+    Ok(())
+}
+pub fn generic_failure(err: String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    typewriter(&mut display, "Op. failed");
+    typewriter(&mut display, &err);
 
     Ok(())
 }
@@ -125,5 +155,12 @@ fn ip_header(
             .unwrap_or(IpAddr::from_str("0.0.0.0")?)
             .to_string(),
     );
+    Ok(())
+}
+
+pub fn debug_print(str: String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut display = get_display()?;
+    typewriter(&mut display, &str);
+
     Ok(())
 }
