@@ -4,10 +4,16 @@ mod audio;
 mod boot;
 mod cbnet;
 mod communication;
+mod hardware;
 mod logger;
 
 use common::{
-    self, command::ControlCommand, control::ControlMessage, network::Heartbeat, show::Show,
+    self,
+    command::ControlCommand,
+    control::ControlMessage,
+    cue::Cue,
+    network::Heartbeat,
+    show::{Show, ShowMetadata},
     status::Notification,
 };
 
@@ -22,11 +28,7 @@ use crate::{
     },
 };
 use clap::Parser;
-use std::{
-    path::PathBuf,
-    str::FromStr,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -42,32 +44,49 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     logger::init();
-    let args = Args::parse();
 
-    if boot::try_patch().is_ok_and(|b| b) {
-        logger::log(
-            "Patched version. Please reboot.".to_string(),
-            common::config::LogContext::Boot,
-            common::config::LogKind::Note,
-        );
-        return;
+    #[cfg(feature = "i2c-ui")]
+    {
+        std::thread::sleep(Duration::from_secs(2));
+        hardware::display::ask_usb();
+        if hardware::input::wait_yes_no() {
+            hardware::usb::mount();
+            if boot::get_usb_update_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
+                hardware::display::ask_patch();
+                if hardware::input::wait_yes_no() {
+                    if boot::try_patch() {
+                        hardware::display::patch_success();
+                        std::thread::sleep(Duration::from_secs(2));
+                    } else {
+                        hardware::display::patch_failure();
+                        return;
+                    }
+                }
+            };
+            if boot::get_usb_show_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
+                hardware::display::ask_copy_show();
+                if hardware::input::wait_yes_no() {
+                    if boot::try_load_usb_show() {
+                        hardware::display::generic_success();
+                    } else {
+                        hardware::display::generic_failure(
+                            "Could not copy show from usb".to_string(),
+                        );
+                    }
+                    std::thread::sleep(Duration::from_secs(3));
+                }
+            };
+            hardware::usb::unmount();
+        }
     }
 
-    let show_path = if args.show_path_override.is_empty() {
-        match boot::find_show_path() {
-            Ok(val) => val,
-            Err(err) => {
-                boot::log_boot_error(err);
-                return;
-            }
-        }
-    } else {
-        match PathBuf::from_str(&args.show_path_override) {
-            Ok(val) => val,
-            Err(err) => panic!("Incorrect path argument to show_path_override."),
+    let show_path = match boot::get_show_path() {
+        Ok(val) => val,
+        Err(err) => {
+            boot::log_boot_error(err);
+            return;
         }
     };
-
     // FIXME: ugly way to make sure that jackd is dead after last debug run
     // should not need to exist in normal operation, because power cycle will reset jackd anyway,
     // and that is the only in-use way to rerun the program
@@ -76,7 +95,26 @@ fn main() {
     }
 
     let mut config = boot::get_config().expect("required to continue");
-    let show = Show::from_file(show_path.join("show.json")).unwrap_or_default();
+    let show = match Show::from_file(boot::get_show_path().unwrap_or_default().join("show.json")) {
+        Ok(show) => {
+            #[cfg(feature = "i2c-ui")]
+            hardware::display::show_load_success(show.clone());
+            show
+        }
+        Err(err) => {
+            #[cfg(feature = "i2c-ui")]
+            hardware::display::show_load_failure(err);
+            Show {
+                metadata: ShowMetadata::default(),
+                cues: vec![Cue::example(), Cue::example_loop()],
+            }
+        }
+    };
+    #[cfg(feature = "i2c-ui")]
+    {
+        std::thread::sleep(Duration::from_secs(5));
+        hardware::display::startup();
+    }
 
     let cbnet = CrossbeamNetwork::new();
 
