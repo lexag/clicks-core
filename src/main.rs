@@ -14,34 +14,19 @@ use crate::{
     },
     cbnet::CrossbeamNetwork,
     communication::{
-        interface::CommunicationInterface, jsonnet::JsonNetHandler, osc::OscNetHandler,
+        binnet::BinaryNetHandler, interface::CommunicationInterface, osc::OscNetHandler,
     },
 };
-use clap::Parser;
 use common::{
-    cue::{Show, ShowBuilder},
-    local::config::{LogContext, LogKind},
-    mem::str::String8,
+    cue::{Cue, Show, ShowBuilder, ShowMetadata},
+    local::config::{LogContext, LogKind, SystemConfiguration},
+    mem::str::StaticString,
     protocol::{
         message::{Heartbeat, Message},
         request::{ControlAction, Request},
     },
 };
-use std::{
-    path::PathBuf,
-    str::FromStr,
-    time::{Duration, Instant},
-};
-
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(short, long, default_value_t = '-')]
-    manual_boot: char,
-
-    #[arg(long, default_value_t = String::from(""))]
-    show_path_override: String,
-}
+use std::time::{Duration, Instant};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -97,22 +82,31 @@ fn main() {
         child.wait();
     }
 
-    let mut config = boot::get_config().expect("required to continue");
-    let show = match Show::from_file(boot::get_show_path().unwrap_or_default().join("show.json")) {
-        Ok(show) => {
-            #[cfg(feature = "i2c-ui")]
-            hardware::display::show_load_success(show.clone());
-            show
-        }
+    let mut config = match boot::get_config() {
+        Ok(conf) => conf,
         Err(err) => {
-            #[cfg(feature = "i2c-ui")]
-            hardware::display::show_load_failure(err);
-            Show {
-                metadata: ShowMetadata::default(),
-                cues: vec![Cue::example(), Cue::example_loop()],
-            }
+            boot::write_default_config();
+            SystemConfiguration::default()
         }
     };
+    let show =
+        match ShowBuilder::from_file(boot::get_show_path().unwrap_or_default().join("show.json")) {
+            Ok(show) => {
+                #[cfg(feature = "i2c-ui")]
+                hardware::display::show_load_success(show.0);
+                show.0
+            }
+            Err(err) => {
+                #[cfg(feature = "i2c-ui")]
+                hardware::display::show_load_failure(err);
+                let mut show = Show {
+                    metadata: ShowMetadata::default(),
+                    cues: [Cue::empty(); 64],
+                };
+                show.cues[0] = Cue::example();
+                show
+            }
+        };
     #[cfg(feature = "i2c-ui")]
     {
         std::thread::sleep(Duration::from_secs(5));
@@ -123,7 +117,7 @@ fn main() {
 
     let mut pbh = PlaybackHandler::new(show_path.clone(), 30);
     let mut ah = AudioHandler::new(32, cbnet.clone());
-    let mut nh = JsonNetHandler::new(8081);
+    let mut nh = BinaryNetHandler::new(8081);
     let mut osch = OscNetHandler::new(8082);
 
     let mut last_heartbeat_time = Instant::now();
@@ -216,8 +210,8 @@ fn main() {
 
         if last_heartbeat_time.elapsed().gt(&Duration::from_secs(1)) {
             let heartbeat = Message::Heartbeat(Heartbeat {
-                common_version: String8::new(common::VERSION),
-                system_version: String8::new(VERSION),
+                common_version: StaticString::new(common::VERSION),
+                system_version: StaticString::new(VERSION),
                 system_time: chrono::Utc::now().timestamp() as u64,
                 cpu_use_audio: ah.get_cpu_use(),
                 process_freq_main: loop_count,

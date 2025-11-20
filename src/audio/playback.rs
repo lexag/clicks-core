@@ -284,7 +284,7 @@ impl PlaybackDevice {
     ) -> (usize, bool, i32) {
         let mut running_active = false;
         let mut running_clip = 0;
-        let mut running_sample = 0_i64;
+        let mut running_sample = 0_i32;
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
@@ -298,7 +298,7 @@ impl PlaybackDevice {
                         sample,
                     }) => {
                         if channel_idx == self.channel_idx {
-                            running_sample = sample as i64;
+                            running_sample = sample as i32;
                             running_clip = clip_idx;
                             running_active = true;
                             time_off_us = 0;

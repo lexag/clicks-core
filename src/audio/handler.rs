@@ -1,9 +1,8 @@
 use crate::{
-    CrossbeamNetwork,
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
-    logger,
+    logger, CrossbeamNetwork,
 };
 use common::{
     cue::Show,
@@ -11,7 +10,7 @@ use common::{
         config::{AudioConfiguration, LogContext, LogKind},
         status::{AudioDevice, JACKStatus},
     },
-    mem::str::String32,
+    mem::str::StaticString,
     protocol::message::Message,
 };
 use jack::{AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags, Unowned};
@@ -49,8 +48,8 @@ impl AudioHandler {
             Err(err) => {
                 logger::log(
                     format!("Could not open JACK client: {:#?}", err),
-                    common::config::LogContext::AudioHandler,
-                    common::config::LogKind::Error,
+                    LogContext::AudioHandler,
+                    LogKind::Error,
                 );
                 self.shutdown();
                 return;
@@ -203,7 +202,7 @@ impl AudioHandler {
             self.jack_status.buffer_size = client.buffer_size() as usize;
             self.jack_status.sample_rate = client.sample_rate();
             self.jack_status.frame_size = 0;
-            self.jack_status.client_name = String32::new(client.name());
+            self.jack_status.client_name = StaticString::new(client.name());
             self.jack_status.output_name = self.config.server.system_name.clone();
             self.jack_status.connections = self.get_connections();
         }

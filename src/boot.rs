@@ -1,6 +1,7 @@
 use crate::logger;
+use bincode::config::{standard, BigEndian, Configuration, Fixint};
 use common::local::config::{LogContext, LogKind, SystemConfiguration};
-use std::{fmt::Display, path::PathBuf, str::FromStr};
+use std::{default, fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]
 pub enum BootError {
@@ -83,8 +84,14 @@ pub fn get_config() -> Result<SystemConfiguration, BootError> {
         Err(err) => return Err(BootError::FileReadError(err.to_string())),
     };
 
-    match serde_json::from_str::<SystemConfiguration>(file_string) {
-        Ok(config) => Ok(config),
+    let config = Configuration::<BigEndian, Fixint>::default()
+        .with_big_endian()
+        .with_fixed_int_encoding();
+    match bincode::decode_from_slice::<SystemConfiguration, Configuration<BigEndian, Fixint>>(
+        file_string.as_bytes(),
+        config,
+    ) {
+        Ok(config) => Ok(config.0),
         Err(err) => Err(BootError::BootProgramOrderFailure(err.to_string())),
     }
 }
@@ -95,9 +102,12 @@ pub fn write_default_config() -> Result<(), BootError> {
             .parent()
             .expect("get_config_path() is constant and has a definite parent."),
     );
+    let bcconfig = Configuration::<BigEndian, Fixint>::default()
+        .with_big_endian()
+        .with_fixed_int_encoding();
     std::fs::write(
         get_config_path(),
-        serde_json::to_string_pretty(&SystemConfiguration::default()).expect(
+        bincode::encode_to_vec(SystemConfiguration::default(), bcconfig).expect(
             "SystemConfiguration::default() has trivial derived conversion and will never fail.",
         ),
     );
@@ -111,7 +121,10 @@ pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
         LogKind::Note,
     );
 
-    let config_str = match serde_json::to_string_pretty(&config) {
+    let bcconfig = Configuration::<BigEndian, Fixint>::default()
+        .with_big_endian()
+        .with_fixed_int_encoding();
+    let config_str = match bincode::encode_to_vec(config, bcconfig) {
         Ok(val) => val,
         Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),
     };

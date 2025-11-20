@@ -9,7 +9,7 @@ use common::{
 
 pub struct TimecodeSource {
     pub active: bool,
-    pub frame_rate: usize,
+    pub frame_rate: u8,
     pub drop_frame: bool,
     pub color_framing: bool,
     pub external_clock: bool,
@@ -34,7 +34,7 @@ impl Default for TimecodeSource {
 }
 
 impl TimecodeSource {
-    pub fn new(frame_rate: usize) -> TimecodeSource {
+    pub fn new(frame_rate: u8) -> TimecodeSource {
         TimecodeSource {
             frame_rate,
             current_time: TimecodeInstant {
@@ -153,8 +153,8 @@ impl TimecodeSource {
             while cursor.at_or_before(beat_idx as u16)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent { h, m, s, f }) = event.event {
-                    time.set_time(h as usize, m as usize, s as usize, f as usize);
+                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event {
+                    time = new_time;
                     time_off_us = 0;
                 }
             }
@@ -199,7 +199,7 @@ impl audio::source::AudioSource for TimecodeSource {
 
         if self.active {
             self.current_time
-                .add_progress((ctx.frame_size * self.frame_rate * 65536 / ctx.sample_rate) as u16);
+                .add_progress((ctx.frame_size * self.frame_rate as usize * 65536 / ctx.sample_rate) as u16);
         }
 
         if !ctx.transport.running || !self.active {
@@ -235,7 +235,7 @@ impl audio::source::AudioSource for TimecodeSource {
     fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
 
     fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
-        if let Some(EventDescription::TimecodeEvent { h, m, s, f }) = event.event {
+        if let Some(EventDescription::TimecodeEvent { time }) = event.event {
             // if this cycle will run over the edge into next beat, we set the new timecode
             // immediately AND restart the frame progress from 0. This is important, as
             // otherwise, the frame time would change mid-frame, and confusion follows.
@@ -243,14 +243,7 @@ impl audio::source::AudioSource for TimecodeSource {
             // frame starts up to 1 whole cycle too early, but it is negligible, as the
             // normal accuracy is only 1/fps (>33ms)
             self.active = true;
-            self.current_time = TimecodeInstant {
-                frame_rate: self.frame_rate,
-                h: h as i16,
-                m: m as i16,
-                s: s as i16,
-                f: f as i16,
-                frame_progress: 0,
-            };
+            self.current_time = time;
         }
     }
 }
