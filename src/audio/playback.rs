@@ -371,8 +371,8 @@ impl AudioSource for PlaybackDevice {
 
     fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
         let mut clips = [0u16; 16];
-        for (i, clip) in clips.iter_mut().enumerate() {
-            *clip = self.clips[i].read_index() as u16;
+        for (i, clip) in self.clips.iter_mut().enumerate() {
+            clips[i] = clip.read_index() as u16;
         }
         AudioSourceState::PlaybackStatus(PlaybackState {
             clips,

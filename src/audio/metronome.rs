@@ -2,7 +2,7 @@ use crate::audio;
 use crate::audio::source::AudioSourceContext;
 use common::event::{EventDescription, JumpRequirement};
 use common::local::status::{AudioSourceState, BeatState, TransportState};
-use common::protocol::message::Message;
+use common::protocol::message::{Message, SmallMessage};
 use common::protocol::request::ControlAction;
 
 struct MetronomeClick {
@@ -104,7 +104,8 @@ impl audio::source::AudioSource for Metronome {
                 } else {
                     self.last_beat_time = scheduled_time;
                 }
-                ctx.cbnet.notify(Message::BeatData(self.state.clone()));
+                ctx.cbnet
+                    .notify(Message::Small(SmallMessage::BeatData(self.state.clone())));
                 return Ok(
                     &self.click_buffers[if beat.count == 1 { 0 } else { 1 }][0..ctx.frame_size]
                 );

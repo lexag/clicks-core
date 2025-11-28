@@ -5,8 +5,7 @@ use common::{
         config::{LogContext, LogKind},
         status::CombinedStatus,
     },
-    mem::typeflags::MessageType,
-    protocol::{message::Message, request::ControlAction},
+    mem::typeflags::MessageType, protocol::{message::{LargeMessage, Message, SmallMessage}, request::ControlAction},
 };
 use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
 
@@ -46,21 +45,18 @@ impl AudioProcessor {
     }
 
     fn send_all_status(&self) {
-        self.cbnet.notify(Message::CueData(self.status.cue));
-        self.cbnet
-            .notify(Message::ShowData(ShowSkeleton::new(self.status.show)));
-        self.cbnet
-            .notify(Message::BeatData(self.status.beat_state()));
-        self.cbnet
-            .notify(Message::TransportData(self.status.transport));
+        self.notify_push(MessageType::TransportData);
+        self.notify_push(MessageType::BeatData);
+        self.notify_push(MessageType::CueData);
+        self.notify_push(MessageType::ShowData);
     }
 
-    fn notify_push(&mut self, message_type: MessageType) {
+    fn notify_push(&self, message_type: MessageType) {
         self.cbnet.notify(match message_type {
-            MessageType::TransportData => Message::TransportData(self.status.transport),
-            MessageType::BeatData => Message::BeatData(self.status.beat_state()),
-            MessageType::CueData => Message::CueData(self.status.cue),
-            MessageType::ShowData => Message::ShowData(ShowSkeleton::new(self.status.show)),
+            MessageType::TransportData => Message::Small(SmallMessage::TransportData(self.status.transport)),
+            MessageType::BeatData => Message::Small(SmallMessage::BeatData(self.status.beat_state())),
+            MessageType::CueData => Message::Large(LargeMessage::CueData(self.status.cue.clone())),
+            MessageType::ShowData => Message::Large(LargeMessage::ShowData(self.status.show.clone())),
             _ => {
                 return;
             }
@@ -109,7 +105,7 @@ impl AudioProcessor {
             }
             ControlAction::LoadCueByIndex(idx) => {
                 if idx < self.status.show.cues.len() as u8 {
-                    self.load_cue(self.status.show.cues[idx as usize]);
+                    self.load_cue(self.status.show.cues[idx as usize].clone());
                     self.status.cue.cue_idx = idx as u16;
                 }
             }
@@ -212,7 +208,7 @@ impl AudioProcessor {
             beat: self.status.beat_state(),
             transport: self.status.transport,
             cbnet: self.cbnet.clone(),
-            cue: Box::new(self.status.cue.cue),
+            cue: self.status.cue.cue.clone(),
         }
     }
 

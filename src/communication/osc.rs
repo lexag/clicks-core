@@ -1,5 +1,5 @@
 use crate::communication::{interface::CommunicationInterface, netport::NetworkPort};
-use common::protocol::message::Message;
+use common::protocol::message::{LargeMessage, Message, SmallMessage};
 use common::protocol::request::{ControlAction, Request};
 use rosc::address::{Matcher, OscAddress};
 use rosc::decoder::decode_udp;
@@ -330,7 +330,7 @@ impl OscNetHandler {
         }
 
         match message {
-            Message::CueData(cue) => {
+            Message::Large(LargeMessage::CueData(cue)) => {
                 vec![
                     osc_msg("/message/cue/index", OscType::Int(cue.cue_idx as i32)),
                     osc_msg(
@@ -347,7 +347,7 @@ impl OscNetHandler {
                     ),
                 ]
             }
-            Message::BeatData(state) => {
+            Message::Small(SmallMessage::BeatData(state)) => {
                 vec![
                     osc_msg(
                         "/message/transport/beat/index",

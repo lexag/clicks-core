@@ -11,7 +11,7 @@ use common::{
         status::{AudioDevice, JACKStatus},
     },
     mem::str::StaticString,
-    protocol::message::Message,
+    protocol::message::{LargeMessage, Message},
 };
 use jack::{AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags, Unowned};
 
@@ -289,7 +289,9 @@ impl AudioHandler {
 
     pub fn send_status(&mut self) {
         let status = self.get_jack_status();
-        let _ = self.cbnet.notify(Message::JACKStateChanged(status));
+        let _ = self
+            .cbnet
+            .notify(Message::Large(LargeMessage::JACKStateChanged(status)));
     }
 
     pub fn get_hw_devices(&self) -> Vec<AudioDevice> {

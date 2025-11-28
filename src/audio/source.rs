@@ -16,7 +16,7 @@ pub struct AudioSourceContext {
     pub beat: BeatState,
     pub transport: TransportState,
     pub cbnet: CrossbeamNetwork,
-    pub cue: Box<Cue>,
+    pub cue: Cue,
 }
 
 impl AudioSourceContext {
@@ -38,7 +38,7 @@ impl Default for AudioSourceContext {
             beat: BeatState::default(),
             transport: TransportState::default(),
             cbnet: CrossbeamNetwork::new(),
-            cue: Box::new(Cue::empty()),
+            cue: Cue::empty(),
         }
     }
 }
