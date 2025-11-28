@@ -50,18 +50,16 @@ pub fn patch_failure() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-pub fn show_load_failure(
-    err: bincode::error::DecodeError,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn show_load_failure(err_str: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
     ip_header(&mut display);
     typewriter(&mut display, "Show load failed");
-    typewriter(&mut display, &format!("{}", err));
+    typewriter(&mut display, err_str);
 
     Ok(())
 }
 
-pub fn show_load_success(show: Show) -> Result<(), Box<dyn std::error::Error>> {
+pub fn show_load_success(show: &Show) -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
     ip_header(&mut display);
     typewriter(&mut display, "Loaded show");

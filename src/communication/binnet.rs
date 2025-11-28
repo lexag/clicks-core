@@ -1,24 +1,20 @@
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    str::FromStr,
-};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::{
     communication::{interface::CommunicationInterface, netport::NetworkPort},
     logger,
 };
-use bincode::config::{BigEndian, Configuration, Fixint};
 use chrono::{DateTime, Utc};
 use common::{
     local::{
         config::{LogContext, LogKind},
         status::NetworkStatus,
     },
-    mem::{
-        network::{IpAddress, SubscriberInfo},
-        typeflags::MessageType,
+    mem::network::{IpAddress, SubscriberInfo},
+    protocol::{
+        message::{LargeMessage, Message},
+        request::Request,
     },
-    protocol::{message::Message, request::Request},
 };
 
 pub struct BinaryNetHandler {
@@ -35,10 +31,7 @@ impl BinaryNetHandler {
             input_queue: vec![],
         };
         logger::log(
-            format!(
-                "opened jsonnet port {}",
-                a.port.socket.local_addr().unwrap()
-            ),
+            format!("opened binnet port {}", a.port.socket.local_addr().unwrap()),
             LogContext::Network,
             LogKind::Note,
         );
@@ -46,11 +39,11 @@ impl BinaryNetHandler {
     }
 
     pub fn publish_subscribers(&mut self) {
-        let subs_slice: [Option<SubscriberInfo>; 32] =
-            std::array::from_fn(|i| self.subscribers.get(i).cloned().map(Some).unwrap_or(None));
-        self.notify(Message::NetworkChanged(NetworkStatus {
-            subscribers: subs_slice,
-        }));
+        self.notify(Message::Large(LargeMessage::NetworkChanged(
+            NetworkStatus {
+                subscribers: self.subscribers.clone(),
+            },
+        )));
     }
 }
 
@@ -60,21 +53,14 @@ impl CommunicationInterface for BinaryNetHandler {
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
             for subscriber in &mut self.subscribers {
-                if Some(subscriber.address.clone())
+                if Some(subscriber.address)
                     == IpAddress::from_str_and_port(&src.ip().to_string(), src.port())
                 {
                     subscriber.last_contact = Utc::now().timestamp() as u128;
                 }
             }
-            let config = Configuration::<BigEndian, Fixint>::default()
-                .with_big_endian()
-                .with_fixed_int_encoding();
-            let msg: Request = match bincode::decode_from_slice::<
-                Request,
-                Configuration<BigEndian, Fixint>,
-            >(&buf[..amt], config)
-            {
-                Ok(msg) => msg.0,
+            let msg: Request = match postcard::from_bytes::<Request>(&buf[..amt]) {
+                Ok(msg) => msg,
                 Err(err) => {
                     panic!(
                         "failed parse! {err} \n {}",
@@ -88,7 +74,7 @@ impl CommunicationInterface for BinaryNetHandler {
                     let mut recognized_subscriber = false;
                     for subscriber in &mut self.subscribers {
                         if subscriber.address == info.address {
-                            subscriber.message_kinds = info.message_kinds.clone();
+                            subscriber.message_kinds = info.message_kinds;
                             recognized_subscriber = true;
                         }
                     }
@@ -150,34 +136,31 @@ impl CommunicationInterface for BinaryNetHandler {
             })
             .collect();
 
-        let mut buf = [0u8; size_of::<Message>()];
-        let config = Configuration::<BigEndian, Fixint>::default()
-            .with_big_endian()
-            .with_fixed_int_encoding();
-        bincode::encode_into_slice(notification, &mut buf, config)
-            .expect("has trivial decode implementation");
-        let mut actual_len = 0;
-        for (i, byte) in buf.iter().enumerate() {
-            if *byte != 0 {
-                actual_len = i + 1;
-            }
-        }
-        let actual_buf = &buf[0..actual_len];
-        if notification.to_type() != MessageType::TransportData {
-            logger::log(
-                format!(
-                    "Sending network message: {notification:?}\n{:02X?}\nTo {:?}",
-                    actual_buf, self.subscribers
-                ),
-                LogContext::Network,
-                LogKind::Debug,
-            );
-        }
+        let encoded_result = match notification.clone() {
+            Message::Small(message) => postcard::to_stdvec(&message),
+            Message::Large(message) => postcard::to_stdvec(&message),
+        };
+
+        let buffer = match encoded_result {
+            Ok(res) => res,
+            Err(_err) => return,
+        };
+
+        logger::log(
+            format!(
+                "sent Message: {:?}\n {}\n({} bytes)\n",
+                notification.to_type(),
+                hex::encode_upper(&buffer),
+                buffer.len()
+            ),
+            LogContext::Network,
+            LogKind::Debug,
+        );
 
         for subscriber in &self.subscribers {
             if subscriber.message_kinds.contains(notification.to_type()) {
                 self.port.send_to(
-                    actual_buf,
+                    &buffer,
                     SocketAddr::new(
                         IpAddr::V4(Ipv4Addr::new(
                             subscriber.address.addr[0],

@@ -1,5 +1,4 @@
 use crate::logger;
-use bincode::config::{standard, BigEndian, Configuration, Fixint};
 use common::local::config::{LogContext, LogKind, SystemConfiguration};
 use std::{default, fmt::Display, path::PathBuf, str::FromStr};
 
@@ -84,14 +83,8 @@ pub fn get_config() -> Result<SystemConfiguration, BootError> {
         Err(err) => return Err(BootError::FileReadError(err.to_string())),
     };
 
-    let config = Configuration::<BigEndian, Fixint>::default()
-        .with_big_endian()
-        .with_fixed_int_encoding();
-    match bincode::decode_from_slice::<SystemConfiguration, Configuration<BigEndian, Fixint>>(
-        file_string.as_bytes(),
-        config,
-    ) {
-        Ok(config) => Ok(config.0),
+    match serde_json::from_str::<SystemConfiguration>(file_string) {
+        Ok(config) => Ok(config),
         Err(err) => Err(BootError::BootProgramOrderFailure(err.to_string())),
     }
 }
@@ -102,12 +95,9 @@ pub fn write_default_config() -> Result<(), BootError> {
             .parent()
             .expect("get_config_path() is constant and has a definite parent."),
     );
-    let bcconfig = Configuration::<BigEndian, Fixint>::default()
-        .with_big_endian()
-        .with_fixed_int_encoding();
     std::fs::write(
         get_config_path(),
-        bincode::encode_to_vec(SystemConfiguration::default(), bcconfig).expect(
+        serde_json::to_string(&SystemConfiguration::default()).expect(
             "SystemConfiguration::default() has trivial derived conversion and will never fail.",
         ),
     );
@@ -121,10 +111,7 @@ pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
         LogKind::Note,
     );
 
-    let bcconfig = Configuration::<BigEndian, Fixint>::default()
-        .with_big_endian()
-        .with_fixed_int_encoding();
-    let config_str = match bincode::encode_to_vec(config, bcconfig) {
+    let config_str = match serde_json::to_string(&config) {
         Ok(val) => val,
         Err(err) => return Err(BootError::ConfigWriteError(err.to_string())),
     };
@@ -160,22 +147,20 @@ pub fn try_patch() -> bool {
     return false;
 }
 
-pub fn try_load_usb_show() -> bool {
+pub fn try_load_usb_show() -> Result<(), BootError> {
     println!("{:?}, {:?}", get_usb_show_path(), get_show_path());
     if let Ok(mut child) = std::process::Command::new("cp")
         .arg("-r")
-        .arg(match get_usb_show_path() {
-            Ok(path) => path,
-            Err(err) => return false,
-        })
-        .arg(match get_show_path() {
-            Ok(path) => path,
-            Err(err) => return false,
-        })
+        .arg(get_usb_show_path()?)
+        .arg(
+            get_show_path()?
+                .parent()
+                .ok_or(BootError::FileDoesNotExist)?,
+        )
         .spawn()
     {
         child.wait();
-        return true;
+        return Ok(());
     }
-    return false;
+    return Err(BootError::FileDoesNotExist);
 }

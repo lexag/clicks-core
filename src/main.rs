@@ -18,11 +18,11 @@ use crate::{
     },
 };
 use common::{
-    cue::{Cue, Show, ShowBuilder, ShowMetadata},
+    cue::{Cue, Show, ShowBuilder},
     local::config::{LogContext, LogKind, SystemConfiguration},
     mem::str::StaticString,
     protocol::{
-        message::{Heartbeat, Message},
+        message::{Heartbeat, LargeMessage, Message, SmallMessage},
         request::{ControlAction, Request},
     },
 };
@@ -54,7 +54,7 @@ fn main() {
             if boot::get_usb_show_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
                 hardware::display::ask_copy_show();
                 if hardware::input::wait_yes_no() {
-                    if boot::try_load_usb_show() {
+                    if boot::try_load_usb_show().is_ok() {
                         hardware::display::generic_success();
                     } else {
                         hardware::display::generic_failure(
@@ -89,24 +89,23 @@ fn main() {
             SystemConfiguration::default()
         }
     };
-    let show =
-        match ShowBuilder::from_file(boot::get_show_path().unwrap_or_default().join("show.json")) {
-            Ok(show) => {
-                #[cfg(feature = "i2c-ui")]
-                hardware::display::show_load_success(show.0);
-                show.0
-            }
-            Err(err) => {
-                #[cfg(feature = "i2c-ui")]
-                hardware::display::show_load_failure(err);
-                let mut show = Show {
-                    metadata: ShowMetadata::default(),
-                    cues: [Cue::empty(); 64],
-                };
-                show.cues[0] = Cue::example();
-                show
-            }
-        };
+    let show = match ShowBuilder::from_bin_file(
+        boot::get_show_path().unwrap_or_default().join("show.bin"),
+    ) {
+        Ok(show) => {
+            #[cfg(feature = "i2c-ui")]
+            hardware::display::show_load_success(&show);
+            show
+        }
+        Err(err) => {
+            #[cfg(feature = "i2c-ui")]
+            hardware::display::show_load_failure(&err.to_string());
+            let mut show = Show::default();
+            show.cues.push(Cue::example());
+            show.cues[0].events.pop(0);
+            show
+        }
+    };
     #[cfg(feature = "i2c-ui")]
     {
         std::thread::sleep(Duration::from_secs(5));
@@ -137,31 +136,41 @@ fn main() {
                 Request::ControlAction(cmd) => {
                     let _ = cbnet.command(cmd.clone());
                     match cmd {
-                        ControlAction::LoadCueByIndex(idx) => pbh.load_cue(show.cues[idx as usize]),
+                        ControlAction::LoadCueByIndex(idx) => {
+                            pbh.load_cue(show.cues[idx as usize].clone())
+                        }
                         ControlAction::SetChannelGain(channel, gain) => {
                             config.channels[channel as usize].gain = gain;
-                            nh.notify(Message::ConfigurationChanged(config.clone()));
+                            nh.notify(Message::Large(LargeMessage::ConfigurationChanged(
+                                config.clone(),
+                            )));
                         }
                         _ => {}
                     }
                 }
                 Request::ChangeRouting(a, b, connect) => {
                     ah.try_route_ports(a, b, connect);
-                    nh.notify(Message::JACKStateChanged(ah.get_jack_status()));
+                    nh.notify(Message::Large(LargeMessage::JACKStateChanged(
+                        ah.get_jack_status(),
+                    )));
                 }
                 Request::NotifySubscribers => {
                     let _ = cbnet.command(ControlAction::DumpStatus);
-                    nh.notify(Message::JACKStateChanged(ah.get_jack_status()));
-                    nh.notify(Message::ConfigurationChanged(config.clone()));
+                    nh.notify(Message::Large(LargeMessage::JACKStateChanged(
+                        ah.get_jack_status(),
+                    )));
+                    nh.notify(Message::Large(LargeMessage::ConfigurationChanged(
+                        config.clone(),
+                    )));
                 }
                 Request::Shutdown => {
                     boot::write_config(config.clone());
                     logger::log(
-                        format!("Shutdown. Goodnight.",),
+                        "Shutdown. Goodnight.".to_string(),
                         LogContext::Boot,
                         LogKind::Note,
                     );
-                    nh.notify(Message::ShutdownOccured);
+                    nh.notify(Message::Small(SmallMessage::ShutdownOccured));
                     ah.shutdown();
                     run_flag = false;
                     break;
@@ -186,12 +195,16 @@ fn main() {
 
                     ah.configure(config.audio.clone());
                     ah.start(sources, show.clone());
-                    nh.notify(Message::JACKStateChanged(ah.get_jack_status()));
+                    nh.notify(Message::Large(LargeMessage::JACKStateChanged(
+                        ah.get_jack_status(),
+                    )));
                 }
 
                 Request::ChangeConfiguration(conf) => {
                     config.update(conf);
-                    nh.notify(Message::ConfigurationChanged(config.clone()));
+                    nh.notify(Message::Large(LargeMessage::ConfigurationChanged(
+                        config.clone(),
+                    )));
                 }
                 _ => {}
             };
@@ -209,13 +222,13 @@ fn main() {
         }
 
         if last_heartbeat_time.elapsed().gt(&Duration::from_secs(1)) {
-            let heartbeat = Message::Heartbeat(Heartbeat {
+            let heartbeat = Message::Small(SmallMessage::Heartbeat(Heartbeat {
                 common_version: StaticString::new(common::VERSION),
                 system_version: StaticString::new(VERSION),
                 system_time: chrono::Utc::now().timestamp() as u64,
                 cpu_use_audio: ah.get_cpu_use(),
                 process_freq_main: loop_count,
-            });
+            }));
             nh.notify(heartbeat.clone());
             osch.notify(heartbeat.clone());
             last_heartbeat_time = Instant::now();
