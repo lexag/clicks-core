@@ -41,6 +41,7 @@ impl AudioProcessor {
             status_changed_flag: false,
         };
         a.load_show(show);
+        a.send_all_status();
         a
     }
 

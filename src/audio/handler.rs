@@ -183,7 +183,7 @@ impl AudioHandler {
 
     pub fn get_jack_status(&mut self) -> JACKStatus {
         self.jack_status.running = !self.client.is_none();
-        let devices: [Option<AudioDevice>; 8] = std::array::from_fn(|i| {
+        let devices: [Option<AudioDevice>; 32] = std::array::from_fn(|i| {
             self.get_hw_devices()
                 .get(i)
                 .cloned()

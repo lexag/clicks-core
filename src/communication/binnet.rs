@@ -12,7 +12,7 @@ use common::{
     },
     mem::network::{IpAddress, SubscriberInfo},
     protocol::{
-        message::{LargeMessage, Message},
+        message::{LargeMessage, Message, SmallMessage},
         request::Request,
     },
 };
@@ -141,10 +141,26 @@ impl CommunicationInterface for BinaryNetHandler {
             Message::Large(message) => postcard::to_stdvec(&message),
         };
 
-        let buffer = match encoded_result {
+        let mut buffer = match encoded_result {
             Ok(res) => res,
             Err(_err) => return,
         };
+
+        // insert a message size byte at the start, which tells the client if this is a small or
+        // large message, since otherwise they can happen to look like the other size, and be
+        // parsed incorrectly
+        //
+        // The LSB of the size byte is enough to tell: 1 is small, 0 is large, but we have some
+        // extra redundancy to a) make sure that it is actually a size byte and not a random bit in
+        // some misplaced message, and b) to identify the size byte in both flipped and non-flipped
+        // ordering
+        buffer.insert(
+            0,
+            match notification {
+                Message::Small(..) => 0xE1,
+                Message::Large(..) => 0xD2,
+            },
+        );
 
         logger::log(
             format!(
