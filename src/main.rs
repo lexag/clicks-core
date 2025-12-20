@@ -122,28 +122,43 @@ fn main() {
     let mut last_heartbeat_time = Instant::now();
     let mut loop_count = 0;
     let mut run_flag = true;
+    let mut cue_idx = 0;
     while run_flag {
         loop_count += 1;
         // Get a possible Request from network handler
         // and decide how to handle it. Network handler has already handled and consumed
         // network-specific messages.
+
         for control_message in [nh.get_all_inputs(), osch.get_all_inputs()]
             .iter()
             .flatten()
         {
             println!("{:?}", control_message);
-            match control_message.clone() {
+            match *control_message {
                 Request::ControlAction(cmd) => {
-                    let _ = cbnet.command(cmd.clone());
+                    cbnet.command(cmd);
                     match cmd {
                         ControlAction::LoadCueByIndex(idx) => {
-                            pbh.load_cue(show.cues[idx as usize].clone())
+                            cue_idx = idx;
+                            pbh.load_cue(show.cues[cue_idx as usize].clone())
                         }
                         ControlAction::SetChannelGain(channel, gain) => {
                             config.channels[channel as usize].gain = gain;
-                            nh.notify(Message::Large(LargeMessage::ConfigurationChanged(
-                                config.clone(),
-                            )));
+                            nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
+                        }
+                        ControlAction::LoadPreviousCue => {
+                            if cue_idx > 0 {
+                                cue_idx -= 1;
+                                cbnet.command(ControlAction::LoadCueByIndex(cue_idx));
+                                pbh.load_cue(show.cues[cue_idx as usize].clone())
+                            }
+                        }
+                        ControlAction::LoadNextCue => {
+                            if cue_idx as usize + 1 < show.cues.len() {
+                                cue_idx += 1;
+                                cbnet.command(ControlAction::LoadCueByIndex(cue_idx));
+                                pbh.load_cue(show.cues[cue_idx as usize].clone())
+                            }
                         }
                         _ => {}
                     }

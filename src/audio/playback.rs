@@ -48,7 +48,7 @@ impl AudioClip {
     pub fn read_buffer_slice(&mut self, start: u32, len: usize) -> &[f32] {
         let buf = &self.buffer.load();
         self.local_buffer[..len].copy_from_slice(&buf[start as usize..start as usize + len]);
-        return &self.local_buffer[0..len];
+        &self.local_buffer[0..len]
     }
     pub fn read_index(&self) -> usize {
         **self.clip_idx.load()
@@ -94,7 +94,7 @@ impl PlaybackHandler {
         clips_in_cue
     }
 
-    fn load_wav_buf(&self, channel: usize, clip: usize) -> Vec<f32> {
+    fn load_wav_buf(&self, channel: usize, clip: u16) -> Vec<f32> {
         let mut reader = match hound::WavReader::open(
             self.show_path
                 .join(format!("playback_media/{:0>3}/{:0>3}.wav", channel, clip)),
@@ -145,8 +145,8 @@ impl PlaybackHandler {
     // Returns a vector indexed by channel where each element is that channel's list of clip idxs
     // in this cue. The inner list is unordered (ordered by first apperance in the cue) and
     // non-duplicated.
-    fn clip_idxs_in_cue(&self, cue: &Cue) -> Vec<Vec<usize>> {
-        let mut clips: Vec<Vec<usize>> = Vec::new();
+    fn clip_idxs_in_cue(&self, cue: &Cue) -> Vec<Vec<u16>> {
+        let mut clips: Vec<Vec<u16>> = Vec::new();
         for _ in 0..self.num_channels {
             clips.push(Vec::new());
         }
@@ -157,9 +157,9 @@ impl PlaybackHandler {
                 clip_idx,
                 sample: _,
             }) = event.event
-                && !clips[channel_idx as usize].contains(&(clip_idx as usize))
+                && !clips[channel_idx as usize].contains(&clip_idx)
             {
-                clips[channel_idx as usize].push(clip_idx as usize);
+                clips[channel_idx as usize].push(clip_idx);
             }
         }
 
@@ -207,11 +207,13 @@ impl PlaybackHandler {
     }
 
     pub fn load_cue(&self, cue: Cue) {
-        for (channel, clips) in self.clip_idxs_in_cue(&cue).iter_mut().enumerate() {
+        println!("loading cue (pbh)");
+        for (channel_idx, clips) in self.clip_idxs_in_cue(&cue).iter_mut().enumerate() {
             clips.sort();
-            for (i, clip) in clips.iter().enumerate() {
-                let buf = self.load_wav_buf(channel, *clip);
-                self.clips[channel][i].write(*clip, buf);
+            for (clip_idx, clip) in clips.iter().enumerate() {
+                let buf = self.load_wav_buf(channel_idx, *clip);
+                self.clips[channel_idx][clip_idx].write(*clip as usize, buf);
+                println!("loading clip {} on channel {}", channel_idx, clip_idx);
             }
         }
     }
@@ -315,7 +317,7 @@ impl PlaybackDevice {
             time_off_us += ctx.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         // TODO: support multiple and resampled sample rates
-        running_sample += time_off_us as i32 * 48 / 1000;
+        running_sample += time_off_us as i32 / 100 * 48 / 10;
         (running_clip as usize, running_active, running_sample)
     }
 }

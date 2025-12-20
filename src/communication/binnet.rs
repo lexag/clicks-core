@@ -162,16 +162,16 @@ impl CommunicationInterface for BinaryNetHandler {
             },
         );
 
-        logger::log(
-            format!(
-                "sent Message: {:?}\n {}\n({} bytes)\n",
-                notification.to_type(),
-                hex::encode_upper(&buffer),
-                buffer.len()
-            ),
-            LogContext::Network,
-            LogKind::Debug,
-        );
+        //logger::log(
+        //    format!(
+        //        "sent Message: {:?}\n {}\n({} bytes)\n",
+        //        notification.to_type(),
+        //        hex::encode_upper(&buffer),
+        //        buffer.len()
+        //    ),
+        //    LogContext::Network,
+        //    LogKind::Debug,
+        //);
 
         for subscriber in &self.subscribers {
             if subscriber.message_kinds.contains(notification.to_type()) {

@@ -100,26 +100,10 @@ impl AudioProcessor {
                 self.status_changed_flag = true;
             }
 
-            ControlAction::LoadCueFromSelfIndex => {
-                self.cbnet
-                    .command(ControlAction::LoadCueByIndex(self.status.cue.cue_idx as u8));
-            }
             ControlAction::LoadCueByIndex(idx) => {
                 if idx < self.status.show.cues.len() as u8 {
                     self.load_cue(self.status.show.cues[idx as usize].clone());
                     self.status.cue.cue_idx = idx as u16;
-                }
-            }
-            ControlAction::LoadPreviousCue => {
-                if self.status.cue.cue_idx > 0 {
-                    self.status.cue.cue_idx -= 1;
-                    self.cbnet.command(ControlAction::LoadCueFromSelfIndex);
-                }
-            }
-            ControlAction::LoadNextCue => {
-                if self.status.cue.cue_idx as usize + 1 < self.status.show.cues.len() {
-                    self.status.cue.cue_idx += 1;
-                    self.cbnet.command(ControlAction::LoadCueFromSelfIndex);
                 }
             }
 

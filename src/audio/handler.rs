@@ -86,7 +86,7 @@ impl AudioHandler {
             .expect("Client is none is handled.")
             .as_client();
         let mut i_ports = client.ports(
-            Some(self.config.client.name.str()),
+            Some("clicks-jack-client"),
             Some("32 bit float mono audio"),
             PortFlags::IS_OUTPUT,
         );
@@ -230,10 +230,7 @@ impl AudioHandler {
     }
 
     pub fn start_client(&mut self) -> Result<Client, jack::Error> {
-        let client_res = Client::new(
-            self.config.client.name.str(),
-            ClientOptions::NO_START_SERVER,
-        );
+        let client_res = Client::new("clicks-jack-client", ClientOptions::NO_START_SERVER);
         match client_res {
             Err(err) => Err(err),
             Ok((client, status)) => {
