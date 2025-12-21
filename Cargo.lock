@@ -90,8 +90,8 @@ checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
 
 [[package]]
 name = "beat"
-version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#1ccac4147cdd49bb9b5663472a7e3d6ea7273f83"
+version = "0.0.0"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
 dependencies = [
  "postcard",
  "serde",
@@ -247,8 +247,8 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
 name = "common"
-version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#1ccac4147cdd49bb9b5663472a7e3d6ea7273f83"
+version = "2.0.0"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
 dependencies = [
  "beat",
  "cue",
@@ -297,8 +297,8 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "cue"
-version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#1ccac4147cdd49bb9b5663472a7e3d6ea7273f83"
+version = "0.0.0"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
 dependencies = [
  "beat",
  "event",
@@ -480,8 +480,8 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "event"
-version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#1ccac4147cdd49bb9b5663472a7e3d6ea7273f83"
+version = "0.0.0"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
 dependencies = [
  "mem",
  "postcard",
@@ -635,9 +635,9 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itoa"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+checksum = "7ee5b5339afb4c41626dde77b7a611bd4f2c202b897852b4bcf5d03eddc61010"
 
 [[package]]
 name = "jack"
@@ -718,8 +718,8 @@ dependencies = [
 
 [[package]]
 name = "local"
-version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#1ccac4147cdd49bb9b5663472a7e3d6ea7273f83"
+version = "0.0.0"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
 dependencies = [
  "beat",
  "bitflags 2.10.0",
@@ -782,8 +782,8 @@ dependencies = [
 
 [[package]]
 name = "mem"
-version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#1ccac4147cdd49bb9b5663472a7e3d6ea7273f83"
+version = "0.0.0"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
 dependencies = [
  "bitflags 2.10.0",
  "postcard",
@@ -1046,8 +1046,8 @@ dependencies = [
 
 [[package]]
 name = "protocol"
-version = "0.1.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=no-std#1ccac4147cdd49bb9b5663472a7e3d6ea7273f83"
+version = "0.0.0"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
 dependencies = [
  "beat",
  "bitflags 2.10.0",
