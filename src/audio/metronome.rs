@@ -1,12 +1,9 @@
-use common::status::{BeatState, TransportState};
-
 use crate::audio;
 use crate::audio::source::AudioSourceContext;
-use common::command::{CommandError, ControlCommand};
-use common::{
-    cue::{BeatEvent, Cue},
-    status::AudioSourceState,
-};
+use common::event::{EventDescription, JumpRequirement};
+use common::local::status::{AudioSourceState, BeatState, TransportState};
+use common::protocol::message::{Message, SmallMessage};
+use common::protocol::request::ControlAction;
 
 struct MetronomeClick {
     frequency: usize,
@@ -17,7 +14,6 @@ pub struct Metronome {
     clicks: Vec<MetronomeClick>,
     click_buffers: [[f32; 96000]; 2],
     last_beat_time: u64,
-    cue: Cue,
     state: BeatState,
     transport: TransportState,
 }
@@ -36,7 +32,6 @@ impl Default for Metronome {
                 },
             ],
             last_beat_time: 0,
-            cue: Cue::empty(),
             click_buffers: [[0f32; 96000]; 2],
             state: BeatState::default(),
             transport: TransportState::default(),
@@ -50,43 +45,18 @@ impl Metronome {
             ..Default::default()
         };
         met.pregen_click_bufs();
-        return met;
+        met
     }
 
     pub fn pregen_click_bufs(&mut self) {
         for i in 0..2 {
             let click = &self.clicks[i];
             let mut buf = [0f32; 96000];
-            for i in 0..click.length * 48 {
-                buf[i] = ((i as f32 * std::f32::consts::PI * click.frequency as f32 / 24000.0)
-                    .sin()
-                    * 0.1) as f32
+            for (i, sample) in buf.iter_mut().enumerate().take(click.length * 48) {
+                *sample =
+                    (i as f32 * std::f32::consts::PI * click.frequency as f32 / 24000.0).sin() * 0.1
             }
             self.click_buffers[i] = buf;
-        }
-    }
-    fn handle_event(&mut self, event: BeatEvent, ctx: &audio::source::AudioSourceContext) {
-        match event {
-            BeatEvent::JumpEvent {
-                destination,
-                requirement,
-                when_jumped,
-                when_passed,
-            } => {
-                let requirement_fullfilled = match requirement {
-                    common::cue::JumpRequirement::JumpModeOn => ctx.transport.vlt,
-                    common::cue::JumpRequirement::JumpModeOff => !ctx.transport.vlt,
-                    common::cue::JumpRequirement::None => true,
-                };
-
-                if requirement_fullfilled {
-                    self.state.next_beat_idx = destination;
-                    self.state.requested_vlt_action = when_jumped;
-                } else {
-                    self.state.requested_vlt_action = when_passed;
-                }
-            }
-            _ => {}
         }
     }
 }
@@ -94,19 +64,19 @@ impl Metronome {
 impl audio::source::AudioSource for Metronome {
     fn get_status(&mut self, ctx: &audio::source::AudioSourceContext) -> AudioSourceState {
         let scheduled_time: u64;
-        if let Some(beat) = self.cue.get_beat(self.state.beat_idx) {
-            scheduled_time =
-                self.last_beat_time + (beat.length * 100 / ctx.transport.playrate_percent) as u64
+        if let Some(beat) = ctx.cue.get_beat(self.state.beat_idx) {
+            scheduled_time = self.last_beat_time
+                + (beat.length as u64 * 100 / ctx.transport.playrate_percent as u64)
         } else {
             scheduled_time = u64::MAX
         };
         self.transport.us_to_next_beat =
             if scheduled_time > ctx.jack_time && scheduled_time < u64::MAX / 2 {
-                (scheduled_time - ctx.jack_time) as usize
+                scheduled_time - ctx.jack_time
             } else {
                 0
             };
-        return AudioSourceState::BeatStatus(self.state.clone());
+        AudioSourceState::BeatStatus(self.state)
     }
 
     fn send_buffer(
@@ -114,31 +84,27 @@ impl audio::source::AudioSource for Metronome {
         ctx: &audio::source::AudioSourceContext,
     ) -> Result<&[f32], jack::Error> {
         if ctx.transport.running {
-            let mut beat = self.cue.get_beat(self.state.beat_idx).unwrap_or_default();
-            let next_beat = match self.cue.get_beat(self.state.next_beat_idx) {
+            let mut beat = ctx.cue.get_beat(self.state.beat_idx).unwrap_or_default();
+            let next_beat = match ctx.cue.get_beat(self.state.next_beat_idx) {
                 None => {
                     return Ok(self.silence(ctx.frame_size));
                 }
                 Some(val) => val,
             };
-            let scheduled_time: u64 =
-                self.last_beat_time + (beat.length * 100 / ctx.transport.playrate_percent) as u64;
+            let scheduled_time: u64 = self.last_beat_time
+                + beat.length as u64 * 100 / ctx.transport.playrate_percent as u64;
 
             if ctx.jack_time > scheduled_time {
                 self.state.beat_idx = self.state.next_beat_idx;
-                beat = self.cue.get_beat(self.state.beat_idx).unwrap_or_default();
+                beat = ctx.cue.get_beat(self.state.beat_idx).unwrap_or_default();
                 self.state.next_beat_idx += 1;
                 if self.last_beat_time == 0 {
                     self.last_beat_time = ctx.jack_time;
                 } else {
                     self.last_beat_time = scheduled_time;
                 }
-                for event in beat.events {
-                    self.handle_event(event, ctx);
-                }
-                ctx.cbnet.notify(common::status::Notification::BeatChanged(
-                    self.state.clone(),
-                ));
+                ctx.cbnet
+                    .notify(Message::Small(SmallMessage::BeatData(self.state)));
                 return Ok(
                     &self.click_buffers[if beat.count == 1 { 0 } else { 1 }][0..ctx.frame_size]
                 );
@@ -146,35 +112,52 @@ impl audio::source::AudioSource for Metronome {
                 return Ok(self.silence(ctx.frame_size));
             }
         }
-        return Ok(self.silence(ctx.frame_size));
+        Ok(self.silence(ctx.frame_size))
     }
 
-    fn command(
-        &mut self,
-        ctx: &AudioSourceContext,
-        command: ControlCommand,
-    ) -> Result<(), CommandError> {
+    fn command(&mut self, _ctx: &AudioSourceContext, command: ControlAction) {
         match command {
-            ControlCommand::LoadCue(cue) => {
-                self.cue = cue;
-            }
-            ControlCommand::TransportZero => {
+            ControlAction::TransportZero => {
                 self.state.beat_idx = 0;
                 self.state.next_beat_idx = 0;
                 self.last_beat_time = 0;
             }
-            ControlCommand::TransportStop => {
+            ControlAction::TransportStop => {
                 self.last_beat_time = 0;
             }
-            ControlCommand::TransportSeekBeat(beat_idx) => {
+            ControlAction::TransportSeekBeat(beat_idx) => {
                 self.state.next_beat_idx = beat_idx;
             }
-            ControlCommand::TransportJumpBeat(beat_idx) => {
+            ControlAction::TransportJumpBeat(beat_idx) => {
                 self.state.next_beat_idx = beat_idx;
                 self.last_beat_time = 0;
             }
             _ => {}
         }
-        return Ok(());
     }
+
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+        if let Some(EventDescription::JumpEvent {
+            destination,
+            requirement,
+            when_jumped,
+            when_passed,
+        }) = event.event
+        {
+            let requirement_fullfilled = match requirement {
+                JumpRequirement::JumpModeOn => ctx.transport.vlt,
+                JumpRequirement::JumpModeOff => !ctx.transport.vlt,
+                JumpRequirement::None => true,
+            };
+
+            if requirement_fullfilled {
+                self.state.next_beat_idx = destination;
+                self.state.requested_vlt_action = when_jumped;
+            } else {
+                self.state.requested_vlt_action = when_passed;
+            }
+        }
+    }
+
+    fn event_will_occur(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
 }

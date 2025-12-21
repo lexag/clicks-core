@@ -1,4 +1,3 @@
-use rppal::i2c;
 use ssd1306::{
     mode::{DisplayConfig, TerminalMode},
     prelude::I2CInterface,
@@ -6,7 +5,7 @@ use ssd1306::{
 };
 
 use crate::VERSION;
-use common::{show::Show, VERSION as COMMON_VERSION};
+use common::{cue::Show, VERSION as COMMON_VERSION};
 use linux_embedded_hal::I2cdev;
 use local_ip_address::local_ip;
 use ssd1306::size::DisplaySize128x64;
@@ -32,7 +31,7 @@ fn get_display() -> Result<
 
 pub fn patch_success() -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
-    ip_header(&mut display);
+    ip_header(&mut display)?;
     typewriter(&mut display, "Update succeeded");
     typewriter(&mut display, "");
     typewriter(&mut display, "Please reboot");
@@ -41,7 +40,7 @@ pub fn patch_success() -> Result<(), Box<dyn std::error::Error>> {
 }
 pub fn patch_failure() -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
-    ip_header(&mut display);
+    ip_header(&mut display)?;
     typewriter(&mut display, "");
     typewriter(&mut display, "Update failed");
     typewriter(&mut display, "");
@@ -50,25 +49,20 @@ pub fn patch_failure() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-pub fn show_load_failure(err: serde_json::Error) -> Result<(), Box<dyn std::error::Error>> {
+pub fn show_load_failure(err_str: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
-    ip_header(&mut display);
+    ip_header(&mut display)?;
     typewriter(&mut display, "Show load failed");
-    typewriter(&mut display, &format!("{:?}", err.classify()));
-    typewriter(
-        &mut display,
-        &format!("lin {} col {}", err.line(), err.column()),
-    );
-    typewriter(&mut display, &format!("{}", err));
+    typewriter(&mut display, err_str);
 
     Ok(())
 }
 
-pub fn show_load_success(show: Show) -> Result<(), Box<dyn std::error::Error>> {
+pub fn show_load_success(show: &Show) -> Result<(), Box<dyn std::error::Error>> {
     let mut display = get_display()?;
-    ip_header(&mut display);
+    ip_header(&mut display)?;
     typewriter(&mut display, "Loaded show");
-    typewriter(&mut display, &show.metadata.name);
+    typewriter(&mut display, show.metadata.name.str());
     typewriter(&mut display, &format!("{} cues", show.cues.len()));
 
     Ok(())
@@ -81,7 +75,7 @@ pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
     typewriter(&mut display, &format!("version {}", VERSION));
     typewriter(&mut display, &format!(" common {}", COMMON_VERSION));
     typewriter(&mut display, "");
-    ip_header(&mut display);
+    ip_header(&mut display)?;
     typewriter(&mut display, "port 8081");
 
     Ok(())
@@ -139,10 +133,10 @@ fn typewriter(
     string: &str,
 ) {
     for c in string.to_string().chars() {
-        display.print_char(c);
+        let _ = display.print_char(c);
         std::thread::sleep(Duration::from_millis(5));
     }
-    display.print_char('\n');
+    let _ = display.print_char('\n');
     std::thread::sleep(Duration::from_millis(5));
 }
 

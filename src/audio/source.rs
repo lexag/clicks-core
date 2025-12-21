@@ -1,8 +1,9 @@
+use common::cue::Cue;
+use common::event::Event;
+use common::local::status::{AudioSourceState, BeatState, TransportState};
+use common::protocol::request::ControlAction;
 use jack::Error;
 
-use common::command::{CommandError, ControlCommand};
-
-use common::status::{AudioSourceState, BeatState, TransportState};
 use std::fmt::Debug;
 use std::ops::Div;
 
@@ -15,11 +16,12 @@ pub struct AudioSourceContext {
     pub beat: BeatState,
     pub transport: TransportState,
     pub cbnet: CrossbeamNetwork,
+    pub cue: Cue,
 }
 
 impl AudioSourceContext {
     pub fn samples_to_next_beat(&self) -> usize {
-        (self.transport.us_to_next_beat / 10) * (self.sample_rate / 100) / 1000
+        (self.transport.us_to_next_beat as usize / 10) * (self.sample_rate / 100) / 1000
     }
 
     pub fn will_overrun_frame(&self) -> bool {
@@ -36,18 +38,18 @@ impl Default for AudioSourceContext {
             beat: BeatState::default(),
             transport: TransportState::default(),
             cbnet: CrossbeamNetwork::new(),
+            cue: Cue::empty(),
         }
     }
 }
 
 pub trait AudioSource: Send {
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], Error>;
-    fn command(
-        &mut self,
-        ctx: &AudioSourceContext,
-        command: ControlCommand,
-    ) -> Result<(), CommandError>;
+    fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction);
     fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState;
+
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: Event);
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: Event);
 
     fn silence(&self, length: usize) -> &[f32] {
         &[0f32; 2048][0..length]

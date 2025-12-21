@@ -1,4 +1,5 @@
 use crate::logger;
+use common::local::config::{LogContext, LogKind};
 use local_ip_address::local_ip;
 use std::net::{SocketAddr, UdpSocket};
 
@@ -16,30 +17,30 @@ impl NetworkPort {
             buffer: [0; BUFFER_SIZE],
             socket: UdpSocket::bind(format!(
                 "{}:{}",
-                local_ip().expect("Couldn't find IP").to_string(),
+                local_ip().expect("Couldn't find IP"),
                 port
             ))
             .expect("couldn't open local port"),
         };
         let _ = s.socket.set_nonblocking(true);
-        return s;
+        s
     }
 
     pub fn recv(&mut self) -> Option<(&[u8; BUFFER_SIZE], usize, SocketAddr)> {
         match self.socket.recv_from(&mut self.buffer) {
-            Ok((amt, src)) => return Some((&self.buffer, amt, src)),
-            Err(err) => None,
+            Ok((amt, src)) => Some((&self.buffer, amt, src)),
+            Err(_) => None,
         }
     }
 
     pub fn send_to(&mut self, content: &[u8], address: SocketAddr) {
         match self.socket.send_to(content, address) {
-            Ok(amt) => {}
+            Ok(_) => {}
             Err(err) => {
                 logger::log(
                     format!("Subscriber send error: {err}"),
-                    logger::LogContext::Network,
-                    logger::LogKind::Error,
+                    LogContext::Network,
+                    LogKind::Error,
                 );
             }
         }

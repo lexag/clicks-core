@@ -1,8 +1,4 @@
-use std::{
-    fmt::Display,
-    net::{IpAddr, SocketAddr},
-    str::FromStr,
-};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::{
     communication::{interface::CommunicationInterface, netport::NetworkPort},
@@ -14,21 +10,20 @@ use common::{
         config::{LogContext, LogKind},
         status::NetworkStatus,
     },
-    mem::{
-        network::{IpAddress, SubscriberInfo},
-        typeflags::MessageType,
+    mem::network::{IpAddress, SubscriberInfo},
+    protocol::{
+        message::{LargeMessage, Message},
+        request::Request,
     },
-    protocol::{message::Message, request::Request},
 };
-use core::fmt;
 
-pub struct JsonNetHandler {
+pub struct BinaryNetHandler {
     port: NetworkPort,
     subscribers: Vec<SubscriberInfo>,
     input_queue: Vec<Request>,
 }
 
-impl JsonNetHandler {
+impl BinaryNetHandler {
     pub fn new(port: usize) -> Self {
         let a = Self {
             port: NetworkPort::new(port),
@@ -36,10 +31,7 @@ impl JsonNetHandler {
             input_queue: vec![],
         };
         logger::log(
-            format!(
-                "opened jsonnet port {}",
-                a.port.socket.local_addr().unwrap()
-            ),
+            format!("opened binnet port {}", a.port.socket.local_addr().unwrap()),
             LogContext::Network,
             LogKind::Note,
         );
@@ -47,30 +39,27 @@ impl JsonNetHandler {
     }
 
     pub fn publish_subscribers(&mut self) {
-        let subs_slice: [Option<SubscriberInfo>; 32] =
-            std::array::from_fn(|i| self.subscribers.get(i).cloned().map(Some).unwrap_or(None));
-        self.notify(Message::NetworkChanged(NetworkStatus {
-            subscribers: subs_slice,
-        }));
+        self.notify(Message::Large(LargeMessage::NetworkChanged(
+            NetworkStatus {
+                subscribers: self.subscribers.clone(),
+            },
+        )));
     }
 }
 
-impl CommunicationInterface for JsonNetHandler {
+impl CommunicationInterface for BinaryNetHandler {
     fn get_inputs(&mut self, limit: usize) -> Vec<Request> {
         let mut inputs: Vec<Request> = vec![];
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
             for subscriber in &mut self.subscribers {
-                if Some(subscriber.address.clone())
+                if Some(subscriber.address)
                     == IpAddress::from_str_and_port(&src.ip().to_string(), src.port())
                 {
                     subscriber.last_contact = Utc::now().timestamp() as u128;
                 }
             }
-            let msg: Request = match serde_json::from_str(match std::str::from_utf8(&buf[..amt]) {
-                Ok(val) => val,
-                Err(err) => panic!("failed conversion! {err}",),
-            }) {
+            let msg: Request = match postcard::from_bytes::<Request>(&buf[..amt]) {
                 Ok(msg) => msg,
                 Err(err) => {
                     panic!(
@@ -79,13 +68,13 @@ impl CommunicationInterface for JsonNetHandler {
                     );
                 }
             };
-            match msg.clone() {
+            match msg {
                 Request::Ping => {}
                 Request::Subscribe(info) => {
                     let mut recognized_subscriber = false;
                     for subscriber in &mut self.subscribers {
                         if subscriber.address == info.address {
-                            subscriber.message_kinds = info.message_kinds.clone();
+                            subscriber.message_kinds = info.message_kinds;
                             recognized_subscriber = true;
                         }
                     }
@@ -123,7 +112,7 @@ impl CommunicationInterface for JsonNetHandler {
                 inputs.append(&mut self.input_queue);
             }
         }
-        return inputs;
+        inputs
     }
 
     fn notify_multiple(&mut self, notifications: Vec<Message>) {
@@ -133,13 +122,6 @@ impl CommunicationInterface for JsonNetHandler {
     }
 
     fn notify(&mut self, notification: Message) {
-        if false && notification.to_type() != MessageType::TransportData {
-            logger::log(
-                format!("Sending network message: {notification:?}"),
-                LogContext::Network,
-                LogKind::Debug,
-            );
-        }
         self.subscribers = self
             .subscribers
             .clone()
@@ -154,15 +136,54 @@ impl CommunicationInterface for JsonNetHandler {
             })
             .collect();
 
+        let encoded_result = match notification.clone() {
+            Message::Small(message) => postcard::to_stdvec(&message),
+            Message::Large(message) => postcard::to_stdvec(&message),
+        };
+
+        let mut buffer = match encoded_result {
+            Ok(res) => res,
+            Err(_err) => return,
+        };
+
+        // insert a message size byte at the start, which tells the client if this is a small or
+        // large message, since otherwise they can happen to look like the other size, and be
+        // parsed incorrectly
+        //
+        // The LSB of the size byte is enough to tell: 1 is small, 0 is large, but we have some
+        // extra redundancy to a) make sure that it is actually a size byte and not a random bit in
+        // some misplaced message, and b) to identify the size byte in both flipped and non-flipped
+        // ordering
+        buffer.insert(
+            0,
+            match notification {
+                Message::Small(..) => 0xE1,
+                Message::Large(..) => 0xD2,
+            },
+        );
+
+        //logger::log(
+        //    format!(
+        //        "sent Message: {:?}\n {}\n({} bytes)\n",
+        //        notification.to_type(),
+        //        hex::encode_upper(&buffer),
+        //        buffer.len()
+        //    ),
+        //    LogContext::Network,
+        //    LogKind::Debug,
+        //);
+
         for subscriber in &self.subscribers {
             if subscriber.message_kinds.contains(notification.to_type()) {
                 self.port.send_to(
-                    serde_json::to_string(&notification)
-                        .expect("notification has trivial derived conversion")
-                        .as_bytes(),
+                    &buffer,
                     SocketAddr::new(
-                        IpAddr::from_str(&format!("{}", &subscriber.address).to_string())
-                            .expect("all subscriber addresses are santizied earlier"),
+                        IpAddr::V4(Ipv4Addr::new(
+                            subscriber.address.addr[0],
+                            subscriber.address.addr[1],
+                            subscriber.address.addr[2],
+                            subscriber.address.addr[3],
+                        )),
                         subscriber.address.port,
                     ),
                 );

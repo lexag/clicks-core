@@ -1,7 +1,6 @@
 use crate::communication::{interface::CommunicationInterface, netport::NetworkPort};
-use common::command::ControlCommand;
-use common::status::Notification;
-use common::control::ControlMessage;
+use common::protocol::message::{LargeMessage, Message, SmallMessage};
+use common::protocol::request::{ControlAction, Request};
 use rosc::address::{Matcher, OscAddress};
 use rosc::decoder::decode_udp;
 use rosc::{OscBundle, OscError, OscMessage, OscPacket, OscTime, OscType};
@@ -36,8 +35,8 @@ use std::time::SystemTime;
 //      config/
 //          ...
 //
-// Valid notification (response) OSC addresses:
-//  /notification/
+// Valid message (response) OSC addresses:
+//  /message/
 //      transport/
 //          running
 //          beat/
@@ -58,7 +57,7 @@ use std::time::SystemTime;
 
 pub struct OscNetHandler {
     port: NetworkPort,
-    input_queue: Vec<ControlMessage>,
+    input_queue: Vec<Request>,
     subscribers: Vec<SocketAddr>,
     bundle_pool: Vec<OscBundle>,
     matcher: Matcher,
@@ -69,27 +68,26 @@ pub struct OscNetHandler {
 }
 
 impl CommunicationInterface for OscNetHandler {
-    fn get_inputs(&mut self, limit: usize) -> Vec<ControlMessage> {
-        let mut inputs: Vec<ControlMessage> = vec![];
+    fn get_inputs(&mut self, _limit: usize) -> Vec<Request> {
+        let mut inputs: Vec<Request> = vec![];
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
-            let data = buf.clone();
-            match self.handle_bytes(&data, amt) {
-                Ok(mut cc) => self.input_queue.append(&mut cc),
-                Err(err) => {}
+            let data = *buf;
+            if let Ok(mut cc) = self.handle_bytes(&data, amt) {
+                self.input_queue.append(&mut cc);
             }
             self.last_recv_src = src;
         }
-        return inputs;
+        inputs
     }
 
-    fn notify(&mut self, notification: Notification) {
-        for msg in self.notif_to_osc(notification) {
+    fn notify(&mut self, message: Message) {
+        for msg in self.notif_to_osc(message) {
             self.send_message(msg);
         }
     }
 
-    fn notify_multiple(&mut self, notifications: Vec<common::status::Notification>) {
+    fn notify_multiple(&mut self, _messages: Vec<Message>) {
         todo!()
     }
 }
@@ -109,19 +107,19 @@ impl OscNetHandler {
         }
     }
 
-    fn handle_bytes(&mut self, buf: &[u8], amt: usize) -> Result<Vec<ControlMessage>, OscError> {
-        let (amt, packet) = decode_udp(&buf[..amt])?;
+    fn handle_bytes(&mut self, buf: &[u8], amt: usize) -> Result<Vec<Request>, OscError> {
+        let (_, packet) = decode_udp(&buf[..amt])?;
         self.handle_packet(packet)
     }
 
-    fn handle_packet(&mut self, packet: OscPacket) -> Result<Vec<ControlMessage>, OscError> {
+    fn handle_packet(&mut self, packet: OscPacket) -> Result<Vec<Request>, OscError> {
         match packet {
             OscPacket::Bundle(bundle) => self.handle_bundle(bundle),
             OscPacket::Message(msg) => self.handle_message(msg),
         }
     }
 
-    fn handle_bundle(&mut self, bundle: OscBundle) -> Result<Vec<ControlMessage>, OscError> {
+    fn handle_bundle(&mut self, bundle: OscBundle) -> Result<Vec<Request>, OscError> {
         if bundle.timetag
             <= OscTime::try_from(SystemTime::now()).expect("SystemTime is after Unix Epoch")
         {
@@ -133,7 +131,7 @@ impl OscNetHandler {
         } else {
             self.bundle_pool.push(bundle);
         }
-        return Ok(Vec::new());
+        Ok(Vec::new())
     }
 
     fn step_address(&mut self) -> &str {
@@ -158,10 +156,10 @@ impl OscNetHandler {
         self.address_space = address_space.to_string();
         self.address = address.to_string();
 
-        return self.address_space.as_str();
+        self.address_space.as_str()
     }
 
-    fn handle_message(&mut self, message: OscMessage) -> Result<Vec<ControlMessage>, OscError> {
+    fn handle_message(&mut self, message: OscMessage) -> Result<Vec<Request>, OscError> {
         let mut msg = message.clone();
         // Valid osc addresses have "/" as the first character.
         // It can be discarded once we know it's there.
@@ -172,7 +170,7 @@ impl OscNetHandler {
         self.args = msg.args;
         self.address = msg.addr;
 
-        return match self.step_address() {
+        match self.step_address() {
             "control" => match self.step_address() {
                 "transport" => self.addr_control_transport_(),
                 "cue" => self.addr_control_cue_(),
@@ -184,13 +182,7 @@ impl OscNetHandler {
                 _ => Err(OscError::Unimplemented),
             },
             "subscribe" => {
-                if let Some(port) = self
-                    .get_arg(0)
-                    .int()
-                    .unwrap_or_default()
-                    .try_into()
-                    .unwrap_or_default()
-                {
+                if let Some(port) = self.get_arg(0).int().unwrap_or_default().into() {
                     self.subscribers
                         .push(SocketAddr::new(self.last_recv_src.ip(), port as u16));
                     Ok(vec![])
@@ -199,7 +191,7 @@ impl OscNetHandler {
                 }
             }
             _ => Err(OscError::Unimplemented),
-        };
+        }
     }
 
     fn send_message(&mut self, msg: OscMessage) {
@@ -221,28 +213,22 @@ impl OscNetHandler {
             self.port.send_to(
                 match &rosc::encoder::encode(&packet) {
                     Ok(val) => val.as_slice(),
-                    Err(err) => continue,
+                    Err(_) => continue,
                 },
                 subscriber,
             );
         }
     }
 
-    fn addr_control_transport_(&mut self) -> Result<Vec<ControlMessage>, OscError> {
-        return match self.step_address() {
-            "start" => Ok(vec![ControlMessage::ControlCommand(
-                ControlCommand::TransportStart,
-            )]),
-            "stop" => Ok(vec![ControlMessage::ControlCommand(
-                ControlCommand::TransportStop,
-            )]),
-            "zero" => Ok(vec![ControlMessage::ControlCommand(
-                ControlCommand::TransportZero,
-            )]),
+    fn addr_control_transport_(&mut self) -> Result<Vec<Request>, OscError> {
+        match self.step_address() {
+            "start" => Ok(vec![Request::ControlAction(ControlAction::TransportStart)]),
+            "stop" => Ok(vec![Request::ControlAction(ControlAction::TransportStop)]),
+            "zero" => Ok(vec![Request::ControlAction(ControlAction::TransportZero)]),
             "seek" => {
                 if let Some(dest) = self.get_arg(0).int() {
-                    Ok(vec![ControlMessage::ControlCommand(
-                        ControlCommand::TransportSeekBeat(dest as usize),
+                    Ok(vec![Request::ControlAction(
+                        ControlAction::TransportSeekBeat(dest as u16),
                     )])
                 } else {
                     Err(OscError::BadArg("beat index".to_string()))
@@ -250,39 +236,35 @@ impl OscNetHandler {
             }
             "jump" => {
                 if let Some(dest) = self.get_arg(0).int() {
-                    Ok(vec![ControlMessage::ControlCommand(
-                        ControlCommand::TransportJumpBeat(dest as usize),
+                    Ok(vec![Request::ControlAction(
+                        ControlAction::TransportJumpBeat(dest as u16),
                     )])
                 } else {
                     Err(OscError::BadArg("beat index".to_string()))
                 }
             }
             _ => Err(OscError::Unimplemented),
-        };
+        }
     }
 
-    fn addr_control_cue_(&mut self) -> Result<Vec<ControlMessage>, OscError> {
-        return match self.step_address() {
-            "+" => Ok(vec![ControlMessage::ControlCommand(
-                ControlCommand::LoadNextCue,
-            )]),
-            "-" => Ok(vec![ControlMessage::ControlCommand(
-                ControlCommand::LoadPreviousCue,
-            )]),
+    fn addr_control_cue_(&mut self) -> Result<Vec<Request>, OscError> {
+        match self.step_address() {
+            "+" => Ok(vec![Request::ControlAction(ControlAction::LoadNextCue)]),
+            "-" => Ok(vec![Request::ControlAction(ControlAction::LoadPreviousCue)]),
             "load" => {
                 if let Some(cue_idx) = self.get_arg(0).int() {
-                    Ok(vec![ControlMessage::ControlCommand(
-                        ControlCommand::LoadCueByIndex(cue_idx as usize),
-                    )])
+                    Ok(vec![Request::ControlAction(ControlAction::LoadCueByIndex(
+                        cue_idx as u8,
+                    ))])
                 } else {
                     Err(OscError::BadArg("cue index".to_string()))
                 }
             }
             _ => Err(OscError::Unimplemented),
-        };
+        }
     }
 
-    fn addr_edit_channel_(&mut self) -> Result<Vec<ControlMessage>, OscError> {
+    fn addr_edit_channel_(&mut self) -> Result<Vec<Request>, OscError> {
         if let Ok(matcher) = Matcher::new(&format!("/{}", self.address)) {
             self.matcher = matcher;
         } else {
@@ -291,86 +273,80 @@ impl OscNetHandler {
 
         let mut cmds = vec![];
         for chidx in 0..32 {
-            if self.addreq(format!("/{chidx}/gain")) {
-                if let Some(gain) = self.get_arg(0).float() {
-                    cmds.push(ControlMessage::ControlCommand(
-                        ControlCommand::SetChannelGain(chidx, gain),
-                    ));
-                }
+            if self.addreq(format!("/{chidx}/gain")) && let Some(gain) = self.get_arg(0).float() {
+                    cmds.push(Request::ControlAction(ControlAction::SetChannelGain(
+                        chidx, gain,
+                    )));
             }
-            if self.addreq(format!("/{chidx}/mute")) {
-                if let Some(mute) = self.get_arg(0).bool() {
-                    cmds.push(ControlMessage::ControlCommand(
-                        ControlCommand::SetChannelMute(chidx, mute),
-                    ));
-                }
+            if self.addreq(format!("/{chidx}/mute")) && let Some(mute) = self.get_arg(0).bool() {
+                    cmds.push(Request::ControlAction(ControlAction::SetChannelMute(
+                        chidx, mute,
+                    )));
             }
             for out_idx in 0..64 {
-                if self.addreq(format!("/{chidx}/route/{out_idx}")) {
-                    if let Some(patch) = self.get_arg(0).bool() {
-                        cmds.push(ControlMessage::RoutingChangeRequest(chidx, out_idx, patch));
+                if self.addreq(format!("/{chidx}/route/{out_idx}")) && let Some(patch) = self.get_arg(0).bool() {
+                        cmds.push(Request::ChangeRouting(chidx, out_idx, patch));
                     }
-                }
             }
         }
-        return Ok(cmds);
+        Ok(cmds)
     }
 
-    fn addr_edit_config_(&mut self) -> Result<Vec<ControlMessage>, OscError> {
+    fn addr_edit_config_(&mut self) -> Result<Vec<Request>, OscError> {
         Err(OscError::Unimplemented)
     }
 
     fn get_arg(&mut self, idx: usize) -> OscType {
-        return self.args.get(idx).cloned().unwrap_or(OscType::Nil);
+        self.args.get(idx).cloned().unwrap_or(OscType::Nil)
     }
 
     fn addreq(&self, addr: String) -> bool {
-        return self.matcher.match_address(match &OscAddress::new(addr) {
+        self.matcher.match_address(match &OscAddress::new(addr) {
             Ok(val) => val,
-            Err(err) => return false,
-        });
+            Err(_) => return false,
+        })
     }
 
-    fn notif_to_osc(&mut self, notification: Notification) -> Vec<OscMessage> {
+    fn notif_to_osc(&mut self, message: Message) -> Vec<OscMessage> {
         // Helper function to macro generate osc messages with a single argument
         fn osc_msg(addr: &str, arg: OscType) -> OscMessage {
-            return OscMessage {
+            OscMessage {
                 addr: addr.to_string(),
                 args: vec![arg],
-            };
+            }
         }
 
-        match notification {
-            Notification::CueChanged(cue) => {
+        match message {
+            Message::Large(LargeMessage::CueData(cue)) => {
                 vec![
-                    osc_msg("/notification/cue/index", OscType::Int(cue.cue_idx as i32)),
+                    osc_msg("/message/cue/index", OscType::Int(cue.cue_idx as i32)),
                     osc_msg(
-                        "/notification/cue/length",
+                        "/message/cue/length",
                         OscType::Int(cue.cue.get_beats().len() as i32),
                     ),
                     osc_msg(
-                        "/notification/cue/ident",
-                        OscType::String(cue.cue.metadata.human_ident),
+                        "/message/cue/ident",
+                        OscType::String(cue.cue.metadata.human_ident.str().to_string()),
                     ),
                     osc_msg(
-                        "/notification/cue/name",
-                        OscType::String(cue.cue.metadata.name),
+                        "/message/cue/name",
+                        OscType::String(cue.cue.metadata.name.str().to_string()),
                     ),
                 ]
             }
-            Notification::BeatChanged(state) => {
+            Message::Small(SmallMessage::BeatData(state)) => {
                 vec![
                     osc_msg(
-                        "/notification/transport/beat/index",
-                        OscType::Int(state.beat_idx.try_into().unwrap_or(0)),
+                        "/message/transport/beat/index",
+                        OscType::Int(state.beat_idx.into()),
                     ),
                     osc_msg(
-                        "/notification/transport/beat/count",
-                        OscType::Int(state.beat.count.try_into().unwrap_or(0)),
+                        "/message/transport/beat/count",
+                        OscType::Int(state.beat.count.into()),
                     ),
                     osc_msg(
-                        "/notification/transport/beat/bar",
-                        OscType::Int(state.beat.bar_number.try_into().unwrap_or(0)),
+                        "/message/transport/beat/bar",
+                        OscType::Int(state.beat.bar_number.into()),
                     ),
                 ]
             }
@@ -408,7 +384,7 @@ mod tests {
 
         let invalids = ["/test//", "test", "/"];
         for invalid in invalids {
-            let packet = OscPacket::Message(OscMessage {
+            let _packet = OscPacket::Message(OscMessage {
                 addr: invalid.to_string(),
                 args: vec![OscType::Int(1)],
             });
@@ -427,39 +403,35 @@ mod tests {
             (
                 "/control/transport/start",
                 vec![],
-                vec![ControlMessage::ControlCommand(
-                    ControlCommand::TransportStart,
-                )],
+                vec![Request::ControlAction(ControlAction::TransportStart)],
             ),
             (
                 "/control/transport/seek",
                 vec![OscType::Int(5)],
-                vec![ControlMessage::ControlCommand(
-                    ControlCommand::TransportSeekBeat(5),
-                )],
+                vec![Request::ControlAction(ControlAction::TransportSeekBeat(5))],
             ),
             (
                 "/edit/channel/{1,2}/gain",
                 vec![OscType::Float(0.2)],
                 vec![
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(1, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(2, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(1, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(2, 0.2)),
                 ],
             ),
             (
                 "/edit/channel/?/gain",
                 vec![OscType::Float(0.2)],
                 vec![
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(0, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(1, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(2, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(3, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(4, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(5, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(6, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(7, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(8, 0.2)),
-                    ControlMessage::ControlCommand(ControlCommand::SetChannelGain(9, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(0, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(1, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(2, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(3, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(4, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(5, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(6, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(7, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(8, 0.2)),
+                    Request::ControlAction(ControlAction::SetChannelGain(9, 0.2)),
                 ],
             ),
         ];
