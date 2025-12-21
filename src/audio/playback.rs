@@ -300,7 +300,7 @@ impl PlaybackDevice {
                         sample,
                     }) => {
                         if channel_idx == self.channel_idx {
-                            running_sample = sample as i32;
+                            running_sample = sample;
                             running_clip = clip_idx;
                             running_active = true;
                             time_off_us = 0;

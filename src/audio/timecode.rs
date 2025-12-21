@@ -56,7 +56,7 @@ impl TimecodeSource {
             parity ^= data & 1;
             data >>= 1;
         }
-        return parity;
+        parity
     }
 
     fn generate_smpte_frame_bits(&self, user_bits: u32) -> u128 {
@@ -117,7 +117,7 @@ impl TimecodeSource {
         } else {
             t_enc |= polarity_correction_bit << 27;
         }
-        return t_enc;
+        t_enc
     }
 
     fn generate_smpte_frame_buffer(&self, bits: u128, samples_per_bit: usize) -> [f32; 2048] {
@@ -125,17 +125,15 @@ impl TimecodeSource {
         let mut current_parity = 1;
         for bit_idx in 0..80 {
             let frame_bit = (0x1 << bit_idx) & bits;
-            for sample_idx in 0..samples_per_bit as usize {
-                if sample_idx == 0 {
-                    current_parity *= -1;
-                } else if sample_idx == samples_per_bit as usize / 2 && frame_bit != 0 {
+            for sample_idx in 0..samples_per_bit {
+                if sample_idx == 0 || (sample_idx == samples_per_bit / 2 && frame_bit != 0) {
                     current_parity *= -1;
                 }
-                buf[sample_idx + bit_idx as usize * samples_per_bit as usize] =
+                buf[sample_idx + bit_idx as usize * samples_per_bit] =
                     (current_parity as f32) * self.volume;
             }
         }
-        return buf;
+        buf
     }
 
     fn calculate_time_at_beat(&self, ctx: &AudioSourceContext, beat_idx: u16) -> TimecodeInstant {
@@ -150,7 +148,7 @@ impl TimecodeSource {
         let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
-            while cursor.at_or_before(beat_idx as u16)
+            while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
                 if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event {
@@ -161,13 +159,13 @@ impl TimecodeSource {
             time_off_us += ctx.cue.get_beat(i).unwrap_or_default().length as u64;
         }
         time.add_us(time_off_us);
-        return time;
+        time
     }
 }
 
 impl audio::source::AudioSource for TimecodeSource {
-    fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
-        return AudioSourceState::TimeStatus(self.current_time.clone());
+    fn get_status(&mut self, _ctx: &AudioSourceContext) -> AudioSourceState {
+        AudioSourceState::TimeStatus(self.current_time)
     }
 
     fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
@@ -183,19 +181,19 @@ impl audio::source::AudioSource for TimecodeSource {
                 self.active = true;
             }
             ControlAction::TransportJumpBeat(beat_idx) => {
-                self.current_time = self.calculate_time_at_beat(ctx, beat_idx as u16);
+                self.current_time = self.calculate_time_at_beat(ctx, beat_idx);
             }
             ControlAction::TransportSeekBeat(beat_idx) => {
-                self.current_time = self.calculate_time_at_beat(ctx, beat_idx as u16);
+                self.current_time = self.calculate_time_at_beat(ctx, beat_idx);
                 self.current_time
-                    .sub_us(ctx.transport.us_to_next_beat as u64)
+                    .sub_us(ctx.transport.us_to_next_beat)
             }
             _ => {}
         }
     }
 
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
-        let last_cycle_frame = self.current_time.clone();
+        let last_cycle_frame = self.current_time;
 
         if self.active {
             self.current_time
@@ -203,11 +201,11 @@ impl audio::source::AudioSource for TimecodeSource {
         }
 
         if !ctx.transport.running || !self.active {
-            return Ok(&self.silence(ctx.frame_size));
+            return Ok(self.silence(ctx.frame_size));
         }
 
         // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-        let samples_per_frame: usize = ctx.sample_rate as usize / self.frame_rate as usize;
+        let samples_per_frame: usize = ctx.sample_rate / self.frame_rate as usize;
         let samples_per_bit: usize = samples_per_frame / 80;
 
         let subframe_sample =
@@ -215,7 +213,7 @@ impl audio::source::AudioSource for TimecodeSource {
 
         if last_cycle_frame != self.current_time {
             self.frame_buffer.copy_within(
-                samples_per_frame as usize..2 * samples_per_frame as usize,
+                samples_per_frame..2 * samples_per_frame,
                 0,
             );
 
@@ -225,16 +223,16 @@ impl audio::source::AudioSource for TimecodeSource {
                 .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
                 [0..samples_per_frame];
             self.frame_buffer[samples_per_frame..2 * samples_per_frame]
-                .copy_from_slice(&next_frame_buf);
+                .copy_from_slice(next_frame_buf);
         }
 
-        return Ok(&self.frame_buffer
-            [subframe_sample as usize..subframe_sample as usize + ctx.frame_size as usize]);
+        Ok(&self.frame_buffer
+            [subframe_sample as usize..subframe_sample as usize + ctx.frame_size])
     }
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
+    fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
 
-    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_will_occur(&mut self, _ctx: &AudioSourceContext, event: common::event::Event) {
         if let Some(EventDescription::TimecodeEvent { time }) = event.event {
             // if this cycle will run over the edge into next beat, we set the new timecode
             // immediately AND restart the frame progress from 0. This is important, as

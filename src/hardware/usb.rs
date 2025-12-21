@@ -1,6 +1,6 @@
 pub fn unmount() {
     if let Ok(mut child) = std::process::Command::new("pumount").arg("usb_mem").spawn() {
-        child.wait();
+        let _ = child.wait();
     }
 }
 
@@ -10,6 +10,6 @@ pub fn mount() {
         .arg("usb_mem")
         .spawn()
     {
-        child.wait();
+        let _ = child.wait();
     }
 }

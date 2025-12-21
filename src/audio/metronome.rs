@@ -45,17 +45,16 @@ impl Metronome {
             ..Default::default()
         };
         met.pregen_click_bufs();
-        return met;
+        met
     }
 
     pub fn pregen_click_bufs(&mut self) {
         for i in 0..2 {
             let click = &self.clicks[i];
             let mut buf = [0f32; 96000];
-            for i in 0..click.length * 48 {
-                buf[i] = ((i as f32 * std::f32::consts::PI * click.frequency as f32 / 24000.0)
-                    .sin()
-                    * 0.1) as f32
+            for (i, sample) in buf.iter_mut().enumerate().take(click.length * 48) {
+                *sample =
+                    (i as f32 * std::f32::consts::PI * click.frequency as f32 / 24000.0).sin() * 0.1
             }
             self.click_buffers[i] = buf;
         }
@@ -73,11 +72,11 @@ impl audio::source::AudioSource for Metronome {
         };
         self.transport.us_to_next_beat =
             if scheduled_time > ctx.jack_time && scheduled_time < u64::MAX / 2 {
-                (scheduled_time - ctx.jack_time) as u64
+                scheduled_time - ctx.jack_time
             } else {
                 0
             };
-        return AudioSourceState::BeatStatus(self.state.clone());
+        AudioSourceState::BeatStatus(self.state)
     }
 
     fn send_buffer(
@@ -93,7 +92,7 @@ impl audio::source::AudioSource for Metronome {
                 Some(val) => val,
             };
             let scheduled_time: u64 = self.last_beat_time
-                + (beat.length as u64 * 100 / ctx.transport.playrate_percent as u64) as u64;
+                + beat.length as u64 * 100 / ctx.transport.playrate_percent as u64;
 
             if ctx.jack_time > scheduled_time {
                 self.state.beat_idx = self.state.next_beat_idx;
@@ -105,7 +104,7 @@ impl audio::source::AudioSource for Metronome {
                     self.last_beat_time = scheduled_time;
                 }
                 ctx.cbnet
-                    .notify(Message::Small(SmallMessage::BeatData(self.state.clone())));
+                    .notify(Message::Small(SmallMessage::BeatData(self.state)));
                 return Ok(
                     &self.click_buffers[if beat.count == 1 { 0 } else { 1 }][0..ctx.frame_size]
                 );
@@ -113,10 +112,10 @@ impl audio::source::AudioSource for Metronome {
                 return Ok(self.silence(ctx.frame_size));
             }
         }
-        return Ok(self.silence(ctx.frame_size));
+        Ok(self.silence(ctx.frame_size))
     }
 
-    fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
+    fn command(&mut self, _ctx: &AudioSourceContext, command: ControlAction) {
         match command {
             ControlAction::TransportZero => {
                 self.state.beat_idx = 0;
@@ -127,10 +126,10 @@ impl audio::source::AudioSource for Metronome {
                 self.last_beat_time = 0;
             }
             ControlAction::TransportSeekBeat(beat_idx) => {
-                self.state.next_beat_idx = beat_idx as u16;
+                self.state.next_beat_idx = beat_idx;
             }
             ControlAction::TransportJumpBeat(beat_idx) => {
-                self.state.next_beat_idx = beat_idx as u16;
+                self.state.next_beat_idx = beat_idx;
                 self.last_beat_time = 0;
             }
             _ => {}
@@ -138,29 +137,27 @@ impl audio::source::AudioSource for Metronome {
     }
 
     fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
-        match event.event {
-            Some(EventDescription::JumpEvent {
-                destination,
-                requirement,
-                when_jumped,
-                when_passed,
-            }) => {
-                let requirement_fullfilled = match requirement {
-                    JumpRequirement::JumpModeOn => ctx.transport.vlt,
-                    JumpRequirement::JumpModeOff => !ctx.transport.vlt,
-                    JumpRequirement::None => true,
-                };
+        if let Some(EventDescription::JumpEvent {
+            destination,
+            requirement,
+            when_jumped,
+            when_passed,
+        }) = event.event
+        {
+            let requirement_fullfilled = match requirement {
+                JumpRequirement::JumpModeOn => ctx.transport.vlt,
+                JumpRequirement::JumpModeOff => !ctx.transport.vlt,
+                JumpRequirement::None => true,
+            };
 
-                if requirement_fullfilled {
-                    self.state.next_beat_idx = destination;
-                    self.state.requested_vlt_action = when_jumped;
-                } else {
-                    self.state.requested_vlt_action = when_passed;
-                }
+            if requirement_fullfilled {
+                self.state.next_beat_idx = destination;
+                self.state.requested_vlt_action = when_jumped;
+            } else {
+                self.state.requested_vlt_action = when_passed;
             }
-            _ => {}
         }
     }
 
-    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
+    fn event_will_occur(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
 }

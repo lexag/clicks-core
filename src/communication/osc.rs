@@ -68,18 +68,17 @@ pub struct OscNetHandler {
 }
 
 impl CommunicationInterface for OscNetHandler {
-    fn get_inputs(&mut self, limit: usize) -> Vec<Request> {
+    fn get_inputs(&mut self, _limit: usize) -> Vec<Request> {
         let mut inputs: Vec<Request> = vec![];
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
-            let data = buf.clone();
-            match self.handle_bytes(&data, amt) {
-                Ok(mut cc) => self.input_queue.append(&mut cc),
-                Err(err) => {}
+            let data = *buf;
+            if let Ok(mut cc) = self.handle_bytes(&data, amt) {
+                self.input_queue.append(&mut cc);
             }
             self.last_recv_src = src;
         }
-        return inputs;
+        inputs
     }
 
     fn notify(&mut self, message: Message) {
@@ -88,7 +87,7 @@ impl CommunicationInterface for OscNetHandler {
         }
     }
 
-    fn notify_multiple(&mut self, messages: Vec<Message>) {
+    fn notify_multiple(&mut self, _messages: Vec<Message>) {
         todo!()
     }
 }
@@ -109,7 +108,7 @@ impl OscNetHandler {
     }
 
     fn handle_bytes(&mut self, buf: &[u8], amt: usize) -> Result<Vec<Request>, OscError> {
-        let (amt, packet) = decode_udp(&buf[..amt])?;
+        let (_, packet) = decode_udp(&buf[..amt])?;
         self.handle_packet(packet)
     }
 
@@ -132,7 +131,7 @@ impl OscNetHandler {
         } else {
             self.bundle_pool.push(bundle);
         }
-        return Ok(Vec::new());
+        Ok(Vec::new())
     }
 
     fn step_address(&mut self) -> &str {
@@ -157,7 +156,7 @@ impl OscNetHandler {
         self.address_space = address_space.to_string();
         self.address = address.to_string();
 
-        return self.address_space.as_str();
+        self.address_space.as_str()
     }
 
     fn handle_message(&mut self, message: OscMessage) -> Result<Vec<Request>, OscError> {
@@ -171,7 +170,7 @@ impl OscNetHandler {
         self.args = msg.args;
         self.address = msg.addr;
 
-        return match self.step_address() {
+        match self.step_address() {
             "control" => match self.step_address() {
                 "transport" => self.addr_control_transport_(),
                 "cue" => self.addr_control_cue_(),
@@ -183,13 +182,7 @@ impl OscNetHandler {
                 _ => Err(OscError::Unimplemented),
             },
             "subscribe" => {
-                if let Some(port) = self
-                    .get_arg(0)
-                    .int()
-                    .unwrap_or_default()
-                    .try_into()
-                    .unwrap_or_default()
-                {
+                if let Some(port) = self.get_arg(0).int().unwrap_or_default().into() {
                     self.subscribers
                         .push(SocketAddr::new(self.last_recv_src.ip(), port as u16));
                     Ok(vec![])
@@ -198,7 +191,7 @@ impl OscNetHandler {
                 }
             }
             _ => Err(OscError::Unimplemented),
-        };
+        }
     }
 
     fn send_message(&mut self, msg: OscMessage) {
@@ -220,7 +213,7 @@ impl OscNetHandler {
             self.port.send_to(
                 match &rosc::encoder::encode(&packet) {
                     Ok(val) => val.as_slice(),
-                    Err(err) => continue,
+                    Err(_) => continue,
                 },
                 subscriber,
             );
@@ -228,7 +221,7 @@ impl OscNetHandler {
     }
 
     fn addr_control_transport_(&mut self) -> Result<Vec<Request>, OscError> {
-        return match self.step_address() {
+        match self.step_address() {
             "start" => Ok(vec![Request::ControlAction(ControlAction::TransportStart)]),
             "stop" => Ok(vec![Request::ControlAction(ControlAction::TransportStop)]),
             "zero" => Ok(vec![Request::ControlAction(ControlAction::TransportZero)]),
@@ -251,11 +244,11 @@ impl OscNetHandler {
                 }
             }
             _ => Err(OscError::Unimplemented),
-        };
+        }
     }
 
     fn addr_control_cue_(&mut self) -> Result<Vec<Request>, OscError> {
-        return match self.step_address() {
+        match self.step_address() {
             "+" => Ok(vec![Request::ControlAction(ControlAction::LoadNextCue)]),
             "-" => Ok(vec![Request::ControlAction(ControlAction::LoadPreviousCue)]),
             "load" => {
@@ -268,7 +261,7 @@ impl OscNetHandler {
                 }
             }
             _ => Err(OscError::Unimplemented),
-        };
+        }
     }
 
     fn addr_edit_channel_(&mut self) -> Result<Vec<Request>, OscError> {
@@ -280,29 +273,23 @@ impl OscNetHandler {
 
         let mut cmds = vec![];
         for chidx in 0..32 {
-            if self.addreq(format!("/{chidx}/gain")) {
-                if let Some(gain) = self.get_arg(0).float() {
+            if self.addreq(format!("/{chidx}/gain")) && let Some(gain) = self.get_arg(0).float() {
                     cmds.push(Request::ControlAction(ControlAction::SetChannelGain(
                         chidx, gain,
                     )));
-                }
             }
-            if self.addreq(format!("/{chidx}/mute")) {
-                if let Some(mute) = self.get_arg(0).bool() {
+            if self.addreq(format!("/{chidx}/mute")) && let Some(mute) = self.get_arg(0).bool() {
                     cmds.push(Request::ControlAction(ControlAction::SetChannelMute(
                         chidx, mute,
                     )));
-                }
             }
             for out_idx in 0..64 {
-                if self.addreq(format!("/{chidx}/route/{out_idx}")) {
-                    if let Some(patch) = self.get_arg(0).bool() {
+                if self.addreq(format!("/{chidx}/route/{out_idx}")) && let Some(patch) = self.get_arg(0).bool() {
                         cmds.push(Request::ChangeRouting(chidx, out_idx, patch));
                     }
-                }
             }
         }
-        return Ok(cmds);
+        Ok(cmds)
     }
 
     fn addr_edit_config_(&mut self) -> Result<Vec<Request>, OscError> {
@@ -310,23 +297,23 @@ impl OscNetHandler {
     }
 
     fn get_arg(&mut self, idx: usize) -> OscType {
-        return self.args.get(idx).cloned().unwrap_or(OscType::Nil);
+        self.args.get(idx).cloned().unwrap_or(OscType::Nil)
     }
 
     fn addreq(&self, addr: String) -> bool {
-        return self.matcher.match_address(match &OscAddress::new(addr) {
+        self.matcher.match_address(match &OscAddress::new(addr) {
             Ok(val) => val,
-            Err(err) => return false,
-        });
+            Err(_) => return false,
+        })
     }
 
     fn notif_to_osc(&mut self, message: Message) -> Vec<OscMessage> {
         // Helper function to macro generate osc messages with a single argument
         fn osc_msg(addr: &str, arg: OscType) -> OscMessage {
-            return OscMessage {
+            OscMessage {
                 addr: addr.to_string(),
                 args: vec![arg],
-            };
+            }
         }
 
         match message {
@@ -351,15 +338,15 @@ impl OscNetHandler {
                 vec![
                     osc_msg(
                         "/message/transport/beat/index",
-                        OscType::Int(state.beat_idx.try_into().unwrap_or(0)),
+                        OscType::Int(state.beat_idx.into()),
                     ),
                     osc_msg(
                         "/message/transport/beat/count",
-                        OscType::Int(state.beat.count.try_into().unwrap_or(0)),
+                        OscType::Int(state.beat.count.into()),
                     ),
                     osc_msg(
                         "/message/transport/beat/bar",
-                        OscType::Int(state.beat.bar_number.try_into().unwrap_or(0)),
+                        OscType::Int(state.beat.bar_number.into()),
                     ),
                 ]
             }
@@ -397,7 +384,7 @@ mod tests {
 
         let invalids = ["/test//", "test", "/"];
         for invalid in invalids {
-            let packet = OscPacket::Message(OscMessage {
+            let _packet = OscPacket::Message(OscMessage {
                 addr: invalid.to_string(),
                 args: vec![OscType::Int(1)],
             });

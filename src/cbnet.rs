@@ -1,5 +1,5 @@
 use common::protocol::{message::Message, request::ControlAction};
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 
 #[derive(Clone)]
 pub struct CrossbeamNetwork {
@@ -22,10 +22,10 @@ impl CrossbeamNetwork {
     }
 
     pub fn notify(&self, notif: Message) {
-        self.notif_tx.try_send(notif);
+        let _ = self.notif_tx.try_send(notif);
     }
 
     pub fn command(&self, cmd: ControlAction) {
-        self.cmd_tx.try_send(cmd);
+        let _ = self.cmd_tx.try_send(cmd);
     }
 }

@@ -1,5 +1,5 @@
 use common::{
-    cue::{Cue, Show, ShowSkeleton},
+    cue::{Cue, Show},
     event::EventCursor,
     local::{
         config::{LogContext, LogKind},
@@ -14,7 +14,6 @@ use crate::{
     audio::source::{AudioSource, AudioSourceContext, SourceConfig},
     logger,
 };
-use std::thread::current;
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
@@ -85,7 +84,7 @@ impl AudioProcessor {
             LogContext::AudioProcessor,
             LogKind::Command,
         );
-        match command.clone() {
+        match command {
             ControlAction::DumpStatus => self.send_all_status(),
             ControlAction::TransportStart => {
                 self.status.transport.running = true;
@@ -126,17 +125,14 @@ impl AudioProcessor {
         // Pass on commands to all children
         // to do source specific implementations
         for source in &mut self.sources {
-            source.source_device.command(&self.ctx, command.clone());
+            source.source_device.command(&self.ctx, command);
         }
 
         self.compile_child_statuses();
 
-        match command.clone() {
-            ControlAction::TransportZero => {
-                self.notify_push(MessageType::BeatData);
-                self.notify_push(MessageType::TransportData);
-            }
-            _ => {}
+        if command == ControlAction::TransportZero {
+            self.notify_push(MessageType::BeatData);
+            self.notify_push(MessageType::TransportData);
         }
     }
 

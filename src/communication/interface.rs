@@ -4,11 +4,11 @@ pub trait CommunicationInterface: Send {
     fn get_inputs(&mut self, limit: usize) -> Vec<Request>;
 
     fn get_all_inputs(&mut self) -> Vec<Request> {
-        return self.get_inputs(usize::MAX);
+        self.get_inputs(usize::MAX)
     }
 
     fn get_single_input(&mut self) -> Option<Request> {
-        return self.get_inputs(1).get(0).cloned();
+        self.get_inputs(1).first().cloned()
     }
 
     fn notify(&mut self, message: Message);

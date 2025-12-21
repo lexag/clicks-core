@@ -36,28 +36,28 @@ fn main() {
     #[cfg(feature = "i2c-ui")]
     {
         std::thread::sleep(Duration::from_secs(2));
-        hardware::display::ask_usb();
+        let _ = hardware::display::ask_usb();
         if hardware::input::wait_yes_no() {
             hardware::usb::mount();
             if boot::get_usb_update_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
-                hardware::display::ask_patch();
+                let _ = hardware::display::ask_patch();
                 if hardware::input::wait_yes_no() {
                     if boot::try_patch() {
-                        hardware::display::patch_success();
+                        let _ = hardware::display::patch_success();
                         std::thread::sleep(Duration::from_secs(2));
                     } else {
-                        hardware::display::patch_failure();
+                        let _ = hardware::display::patch_failure();
                         return;
                     }
                 }
             };
             if boot::get_usb_show_path().is_ok_and(|p| p.try_exists().is_ok_and(|b| b)) {
-                hardware::display::ask_copy_show();
+                let _ = hardware::display::ask_copy_show();
                 if hardware::input::wait_yes_no() {
                     if boot::try_load_usb_show().is_ok() {
-                        hardware::display::generic_success();
+                        let _ = hardware::display::generic_success();
                     } else {
-                        hardware::display::generic_failure(
+                        let _ = hardware::display::generic_failure(
                             "Could not copy show from usb".to_string(),
                         );
                     }
@@ -79,13 +79,13 @@ fn main() {
     // should not need to exist in normal operation, because power cycle will reset jackd anyway,
     // and that is the only in-use way to rerun the program
     if let Ok(mut child) = std::process::Command::new("killall").arg("jackd").spawn() {
-        child.wait();
+        let _ = child.wait();
     }
 
     let mut config = match boot::get_config() {
         Ok(conf) => conf,
-        Err(err) => {
-            boot::write_default_config();
+        Err(_) => {
+            let _ = boot::write_default_config();
             SystemConfiguration::default()
         }
     };
@@ -94,12 +94,12 @@ fn main() {
     ) {
         Ok(show) => {
             #[cfg(feature = "i2c-ui")]
-            hardware::display::show_load_success(&show);
+            let _ = hardware::display::show_load_success(&show);
             show
         }
         Err(err) => {
             #[cfg(feature = "i2c-ui")]
-            hardware::display::show_load_failure(&err.to_string());
+            let _ = hardware::display::show_load_failure(&err.to_string());
             let mut show = Show::default();
             show.cues.push(Cue::example());
             show.cues[0].events.pop(0);
@@ -109,7 +109,7 @@ fn main() {
     #[cfg(feature = "i2c-ui")]
     {
         std::thread::sleep(Duration::from_secs(5));
-        hardware::display::startup();
+        let _ = hardware::display::startup();
     }
 
     let cbnet = CrossbeamNetwork::new();
@@ -170,16 +170,14 @@ fn main() {
                     )));
                 }
                 Request::NotifySubscribers => {
-                    let _ = cbnet.command(ControlAction::DumpStatus);
+                    cbnet.command(ControlAction::DumpStatus);
                     nh.notify(Message::Large(LargeMessage::JACKStateChanged(
                         ah.get_jack_status(),
                     )));
-                    nh.notify(Message::Large(LargeMessage::ConfigurationChanged(
-                        config.clone(),
-                    )));
+                    nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
                 }
                 Request::Shutdown => {
-                    boot::write_config(config.clone());
+                    let _ = boot::write_config(config);
                     logger::log(
                         "Shutdown. Goodnight.".to_string(),
                         LogContext::Boot,
@@ -208,7 +206,7 @@ fn main() {
                         source.set_gain(config.channels[i].gain);
                     }
 
-                    ah.configure(config.audio.clone());
+                    ah.configure(config.audio);
                     ah.start(sources, show.clone());
                     nh.notify(Message::Large(LargeMessage::JACKStateChanged(
                         ah.get_jack_status(),
@@ -217,9 +215,7 @@ fn main() {
 
                 Request::ChangeConfiguration(conf) => {
                     config.update(conf);
-                    nh.notify(Message::Large(LargeMessage::ConfigurationChanged(
-                        config.clone(),
-                    )));
+                    nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
                 }
                 _ => {}
             };

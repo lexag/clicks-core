@@ -12,7 +12,7 @@ use common::{
     },
     mem::network::{IpAddress, SubscriberInfo},
     protocol::{
-        message::{LargeMessage, Message, SmallMessage},
+        message::{LargeMessage, Message},
         request::Request,
     },
 };
@@ -68,7 +68,7 @@ impl CommunicationInterface for BinaryNetHandler {
                     );
                 }
             };
-            match msg.clone() {
+            match msg {
                 Request::Ping => {}
                 Request::Subscribe(info) => {
                     let mut recognized_subscriber = false;
@@ -112,7 +112,7 @@ impl CommunicationInterface for BinaryNetHandler {
                 inputs.append(&mut self.input_queue);
             }
         }
-        return inputs;
+        inputs
     }
 
     fn notify_multiple(&mut self, notifications: Vec<Message>) {

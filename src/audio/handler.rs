@@ -93,7 +93,7 @@ impl AudioHandler {
         i_ports.sort_by_key(|name| {
             let mut new_name = name.clone();
             new_name.retain(|c| c.is_numeric());
-            return new_name.parse::<usize>().unwrap_or_default();
+            new_name.parse::<usize>().unwrap_or_default()
         });
         ports.0 = i_ports
             .iter()
@@ -112,7 +112,7 @@ impl AudioHandler {
         o_ports.sort_by_key(|name| {
             let mut new_name = name.clone();
             new_name.retain(|c| c.is_numeric());
-            return new_name.parse::<usize>().unwrap_or_default();
+            new_name.parse::<usize>().unwrap_or_default()
         });
         ports.1 = o_ports
             .iter()
@@ -123,7 +123,7 @@ impl AudioHandler {
             })
             .collect();
 
-        return ports;
+        ports
     }
 
     pub fn get_connections(&self) -> [u32; 32] {
@@ -161,14 +161,14 @@ impl AudioHandler {
         };
 
         match res {
-            Ok(val) => {
+            Ok(_) => {
                 logger::log(
                     format!("Set port [{from}] -> [{to}] to {connect}"),
                     LogContext::AudioHandler,
                     LogKind::Note,
                 );
 
-                return true;
+                true
             }
             Err(err) => {
                 logger::log(
@@ -176,13 +176,13 @@ impl AudioHandler {
                     LogContext::AudioHandler,
                     LogKind::Error,
                 );
-                return false;
+                false
             }
         }
     }
 
     pub fn get_jack_status(&mut self) -> JACKStatus {
-        self.jack_status.running = !self.client.is_none();
+        self.jack_status.running = self.client.is_some();
         let devices: [Option<AudioDevice>; 32] = std::array::from_fn(|i| {
             self.get_hw_devices()
                 .get(i)
@@ -196,37 +196,34 @@ impl AudioHandler {
         if self.jack_status.running {
             let client = match &self.client {
                 Some(val) => val.as_client(),
-                None => return self.jack_status.clone(),
+                None => return self.jack_status,
             };
             self.jack_status.io_size = (self.get_ports().0.len(), self.get_ports().1.len());
             self.jack_status.buffer_size = client.buffer_size() as usize;
             self.jack_status.sample_rate = client.sample_rate();
             self.jack_status.frame_size = 0;
             self.jack_status.client_name = StaticString::new(client.name());
-            self.jack_status.output_name = self.config.server.system_name.clone();
+            self.jack_status.output_name = self.config.server.system_name;
             self.jack_status.connections = self.get_connections();
         }
-        return self.jack_status.clone();
+        self.jack_status
     }
 
     pub fn shutdown(&mut self) {
-        match self.jack_server_process.as_mut() {
+        let _ = match self.jack_server_process.as_mut() {
             None => return,
             Some(val) => val.kill(),
         };
     }
 
     pub fn start_server(&mut self) {
-        self.jack_server_process = match std::process::Command::new("jackd")
+        self.jack_server_process = std::process::Command::new("jackd")
             .arg("-R")
             .args(["-d", "alsa"])
             .args(["-d", self.config.server.device_id.str()])
             .args(["-r", &self.config.server.sample_rate.to_string()])
             .spawn()
-        {
-            Ok(val) => Some(val),
-            Err(err) => None,
-        };
+            .ok()
     }
 
     pub fn start_client(&mut self) -> Result<Client, jack::Error> {
@@ -255,7 +252,7 @@ impl AudioHandler {
                     .expect("Port register failed"),
             );
         }
-        return ports;
+        ports
     }
 
     pub fn collect_system_ports(&self, client: &Client) -> Vec<Port<Unowned>> {
@@ -267,27 +264,26 @@ impl AudioHandler {
         ports.sort_by_key(|name| {
             let mut new_name = name.clone();
             new_name.retain(|c| c.is_numeric());
-            return new_name.parse::<usize>().unwrap_or_default();
+            new_name.parse::<usize>().unwrap_or_default()
         });
         logger::log(
             format!("Found {} system ports.", ports.len()),
             LogContext::AudioHandler,
             LogKind::Note,
         );
-        return ports
+        ports
             .iter()
             .map(|name| {
                 client
                     .port_by_name(name)
                     .expect("Port names are unexposed and should always be right")
             })
-            .collect();
+            .collect()
     }
 
     pub fn send_status(&mut self) {
         let status = self.get_jack_status();
-        let _ = self
-            .cbnet
+        self.cbnet
             .notify(Message::Large(LargeMessage::JACKStateChanged(status)));
     }
 
@@ -301,11 +297,9 @@ impl AudioHandler {
         let mut devices = Vec::new();
 
         for line in stdout.lines() {
-            if line.trim_start().starts_with("card") {
-                if let Some(device) = AudioDevice::from_aplay_str(line) {
+            if line.trim_start().starts_with("card") && let Some(device) = AudioDevice::from_aplay_str(line) {
                     devices.push(device);
                 }
-            }
         }
 
         devices

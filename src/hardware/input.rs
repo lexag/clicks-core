@@ -9,9 +9,9 @@ pub struct HwButton: u8 {
 
 fn get_buttons() -> Result<HwButton, Box<dyn std::error::Error>> {
     let mut i2c = I2c::new()?;
-    i2c.set_slave_address(0x55);
+    let _ = i2c.set_slave_address(0x55);
     let mut buf = [0u8; 1];
-    i2c.read(&mut buf);
+    let _ = i2c.read(&mut buf);
     Ok(HwButton::from_bits(buf[0]).unwrap_or_default())
 }
 
