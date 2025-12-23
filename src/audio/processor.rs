@@ -3,7 +3,7 @@ use common::{
     event::EventCursor,
     local::{
         config::{LogContext, LogKind},
-        status::CombinedStatus,
+        status::{AudioSourceState, BeatState, CombinedStatus},
     },
     mem::typeflags::MessageType, protocol::{message::{LargeMessage, Message, SmallMessage}, request::ControlAction},
 };
@@ -150,7 +150,13 @@ impl AudioProcessor {
 
         self.status.transport.ltc = self.status.time_state();
 
-        if self.status.beat_state().beat_idx != current_beat {
+        let new_idx = self.status.beat_state().beat_idx;
+        if let AudioSourceState::BeatStatus(state) = &mut self.status.sources[0] {
+            state.beat = self.status.cue.cue.get_beat(new_idx).unwrap_or_default();
+        }
+
+        if new_idx != current_beat {
+            self.notify_push(MessageType::BeatData);
             self.send_beat_events_to_children(self.status.beat_state().beat_idx, false);
         }
     }
