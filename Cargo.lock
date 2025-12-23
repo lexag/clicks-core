@@ -47,7 +47,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys",
 ]
 
 [[package]]
@@ -58,7 +58,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.59.0",
+ "windows-sys",
 ]
 
 [[package]]
@@ -91,11 +91,10 @@ checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
 [[package]]
 name = "beat"
 version = "0.0.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#12f55f08013270e5fee30e165eace5cd94c60b8d"
 dependencies = [
  "postcard",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -118,12 +117,6 @@ name = "bumpalo"
 version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5dd9dc738b7a8311c7ade152424974d8115f2cdad61e8dab8dac9f2362298510"
-
-[[package]]
-name = "byte-slice-cast"
-version = "1.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7575182f7272186991736b70173b0ea045398f984bf5ebbb3804736ce1330c9d"
 
 [[package]]
 name = "byte-slice-cast"
@@ -214,7 +207,7 @@ checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
 name = "clicks-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "arc-swap",
  "bitflags 2.10.0",
@@ -253,8 +246,8 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
 name = "common"
-version = "2.0.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
+version = "2.0.2"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#12f55f08013270e5fee30e165eace5cd94c60b8d"
 dependencies = [
  "beat",
  "cue",
@@ -269,16 +262,6 @@ name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2a6cd9ae233e7f62ba4e9353e81a88df7fc8a5987b8d445b4d90c879bd156f6"
-dependencies = [
- "core-foundation-sys",
- "libc",
-]
-
-[[package]]
-name = "core-foundation"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b55271e5c8c478ad3f38ad24ef34923091e0548492a266d19b3c0b4d82574c63"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -314,14 +297,13 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 [[package]]
 name = "cue"
 version = "0.0.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#12f55f08013270e5fee30e165eace5cd94c60b8d"
 dependencies = [
  "beat",
  "event",
  "mem",
  "postcard",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -497,12 +479,11 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 [[package]]
 name = "event"
 version = "0.0.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#12f55f08013270e5fee30e165eace5cd94c60b8d"
 dependencies = [
  "mem",
  "postcard",
  "serde",
- "serde_json",
  "tiny_sort",
 ]
 
@@ -735,7 +716,7 @@ dependencies = [
 [[package]]
 name = "local"
 version = "0.0.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#12f55f08013270e5fee30e165eace5cd94c60b8d"
 dependencies = [
  "beat",
  "bitflags 2.10.0",
@@ -744,7 +725,6 @@ dependencies = [
  "mem",
  "postcard",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -756,7 +736,7 @@ dependencies = [
  "libc",
  "neli",
  "thiserror",
- "windows-sys 0.59.0",
+ "windows-sys",
 ]
 
 [[package]]
@@ -799,7 +779,7 @@ dependencies = [
 [[package]]
 name = "mem"
 version = "0.0.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#12f55f08013270e5fee30e165eace5cd94c60b8d"
 dependencies = [
  "bitflags 2.10.0",
  "postcard",
@@ -807,56 +787,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "mach2"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "maybe-async-cfg"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1e083394889336bc66a4eaf1011ffbfa74893e910f902a9f271fa624c61e1b2"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "pulldown-cmark",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
-
-[[package]]
-name = "memoffset"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
-name = "memoffset"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
-name = "micromath"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
 name = "memoffset"
@@ -921,43 +855,6 @@ dependencies = [
  "quote",
  "serde",
  "syn 2.0.111",
-]
-
-[[package]]
-name = "nix"
-version = "0.23.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f3790c00a0150112de0f4cd161e3d7fc4b2d8a5542ffc35f099a2562aecb35c"
-dependencies = [
- "bitflags 1.3.2",
- "cc",
- "cfg-if",
- "libc",
- "memoffset 0.6.5",
-]
-
-[[package]]
-name = "nix"
-version = "0.26.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "598beaf3cc6fdd9a5dfb1630c2800c7acd31df7aaf0f565796fba2b53ca1af1b"
-dependencies = [
- "bitflags 1.3.2",
- "cfg-if",
- "libc",
- "memoffset 0.7.1",
- "pin-utils",
-]
-
-[[package]]
-name = "nix"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
-dependencies = [
- "bitflags 2.10.0",
- "cfg-if",
- "libc",
 ]
 
 [[package]]
@@ -1064,12 +961,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
-name = "pin-utils"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
 name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1152,7 +1043,7 @@ dependencies = [
 [[package]]
 name = "protocol"
 version = "0.0.0"
-source = "git+https://github.com/lexag/clicks-common.git?branch=main#f176dc564d3a343fd6e0697aacb53b998f721a81"
+source = "git+https://github.com/lexag/clicks-common.git?branch=main#12f55f08013270e5fee30e165eace5cd94c60b8d"
 dependencies = [
  "beat",
  "bitflags 2.10.0",
@@ -1162,7 +1053,6 @@ dependencies = [
  "mem",
  "postcard",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1248,12 +1138,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
-name = "scopeguard"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1285,9 +1169,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.145"
+version = "1.0.146"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
+checksum = "217ca874ae0207aac254aa02c957ded05585a90892cc8d87f9e5fa49669dadd8"
 dependencies = [
  "itoa",
  "memchr",
@@ -1312,25 +1196,6 @@ dependencies = [
  "scopeguard",
  "unescaper",
  "winapi",
-]
-
-[[package]]
-name = "serialport"
-version = "4.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21f60a586160667241d7702c420fc223939fb3c0bb8d3fac84f78768e8970dee"
-dependencies = [
- "bitflags 2.10.0",
- "cfg-if",
- "core-foundation",
- "core-foundation-sys",
- "io-kit-sys",
- "mach2",
- "nix 0.26.4",
- "quote",
- "scopeguard",
- "unescaper",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
