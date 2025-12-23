@@ -205,6 +205,10 @@ impl AudioProcessor {
         while cursor.at_or_before(beat_idx)
             && let Some(event) = cursor.get_next()
         {
+            if pre_event && let Some(desc) = event.event {
+                self.cbnet.notify(Message::Small(SmallMessage::EventOccured(desc)));
+            }
+
             for source in &mut self.sources {
                 if pre_event {
                     source.source_device.event_will_occur(&self.ctx, event);
