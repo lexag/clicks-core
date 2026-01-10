@@ -11,10 +11,8 @@ use local_ip_address::local_ip;
 use ssd1306::size::DisplaySize128x64;
 use std::{net::IpAddr, str::FromStr, time::Duration};
 
-fn get_display() -> Result<
-    Ssd1306<I2CInterface<I2cdev>, DisplaySize128x64, TerminalMode>,
-    Box<dyn std::error::Error>,
-> {
+fn get_display(
+) -> Result<Ssd1306<I2CInterface<I2cdev>, DisplaySize128x64, TerminalMode>, std::io::Error> {
     let i2cdev = I2cdev::new("/dev/i2c-1")?;
 
     let interface = ssd1306::I2CDisplayInterface::new(i2cdev);
@@ -29,7 +27,7 @@ fn get_display() -> Result<
     Ok(display)
 }
 
-pub fn patch_success() -> Result<(), Box<dyn std::error::Error>> {
+pub fn patch_success() -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     ip_header(&mut display)?;
     typewriter(&mut display, "Update succeeded");
@@ -38,7 +36,7 @@ pub fn patch_success() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-pub fn patch_failure() -> Result<(), Box<dyn std::error::Error>> {
+pub fn patch_failure() -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     ip_header(&mut display)?;
     typewriter(&mut display, "");
@@ -49,7 +47,7 @@ pub fn patch_failure() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-pub fn show_load_failure(err_str: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn show_load_failure(err_str: &str) -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     ip_header(&mut display)?;
     typewriter(&mut display, "Show load failed");
@@ -58,7 +56,7 @@ pub fn show_load_failure(err_str: &str) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-pub fn show_load_success(show: &Show) -> Result<(), Box<dyn std::error::Error>> {
+pub fn show_load_success(show: &Show) -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     ip_header(&mut display)?;
     typewriter(&mut display, "Loaded show");
@@ -68,7 +66,7 @@ pub fn show_load_success(show: &Show) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
+pub fn startup() -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     typewriter(&mut display, "Karspexet ClicKS");
     typewriter(&mut display, "");
@@ -81,7 +79,7 @@ pub fn startup() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn ask_usb() -> Result<(), Box<dyn std::error::Error>> {
+pub fn ask_usb() -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     typewriter(&mut display, "");
     typewriter(&mut display, "Load USB?");
@@ -92,7 +90,7 @@ pub fn ask_usb() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn ask_patch() -> Result<(), Box<dyn std::error::Error>> {
+pub fn ask_patch() -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     typewriter(&mut display, "");
     typewriter(&mut display, "Update found");
@@ -102,7 +100,7 @@ pub fn ask_patch() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn ask_copy_show() -> Result<(), Box<dyn std::error::Error>> {
+pub fn ask_copy_show() -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     typewriter(&mut display, "");
     typewriter(&mut display, "USB show found");
@@ -112,7 +110,7 @@ pub fn ask_copy_show() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn generic_success() -> Result<(), Box<dyn std::error::Error>> {
+pub fn generic_success() -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     typewriter(&mut display, "");
     typewriter(&mut display, "Success!");
@@ -120,7 +118,7 @@ pub fn generic_success() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-pub fn generic_failure(err: String) -> Result<(), Box<dyn std::error::Error>> {
+pub fn generic_failure(err: String) -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     typewriter(&mut display, "Op. failed");
     typewriter(&mut display, &err);
@@ -142,17 +140,17 @@ fn typewriter(
 
 fn ip_header(
     display: &mut Ssd1306<I2CInterface<I2cdev>, DisplaySize128x64, TerminalMode>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), std::io::Error> {
     typewriter(
         display,
         &local_ip()
-            .unwrap_or(IpAddr::from_str("0.0.0.0")?)
+            .unwrap_or(IpAddr::from_str("0.0.0.0").expect("const eval"))
             .to_string(),
     );
     Ok(())
 }
 
-pub fn debug_print(str: String) -> Result<(), Box<dyn std::error::Error>> {
+pub fn debug_print(str: String) -> Result<(), std::io::Error> {
     let mut display = get_display()?;
     typewriter(&mut display, &str);
 
