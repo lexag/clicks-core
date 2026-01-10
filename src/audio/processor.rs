@@ -259,7 +259,7 @@ impl ProcessHandler for AudioProcessor {
         }
 
         // Warn of upcoming events
-        if self.ctx.will_overrun_frame() {
+        if self.ctx.will_overrun_frame() && self.status.transport.running {
             self.send_beat_events_to_children(self.status.beat_state().next_beat_idx, true);
         }
 
