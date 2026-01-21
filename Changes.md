@@ -1,4 +1,4 @@
-## 1.3.0
+## 1.2.1 - 2026-01-21
 - Refactor log handling
 - Basic implementation of hardware controller
 
