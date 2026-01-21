@@ -128,11 +128,11 @@ fn main() {
         // and decide how to handle it. Network handler has already handled and consumed
         // network-specific messages.
 
+        let _ = log_dispatcher.tick();
         for control_message in [nh.get_all_inputs(), osch.get_all_inputs()]
             .iter()
             .flatten()
         {
-            println!("{:?}", control_message);
             match *control_message {
                 Request::ControlAction(cmd) => {
                     cbnet.command(cmd);

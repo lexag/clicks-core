@@ -71,8 +71,8 @@ impl LogDispatcher {
         if item.kind.intersects(self.kind_filter) && item.context.intersects(self.context_filter) {
             if let Some(handler) = &self.file_handler {
                 handler.log_to_file(&item)?;
-                // also send message
             }
+            // also send message
         }
         if item.kind.intersects(LogKind::Error | LogKind::Warning) {
             hardware::display::generic_failure(item.message)?;
@@ -97,10 +97,16 @@ impl LogFileHandler {
             let _ = std::fs::create_dir_all(&full_path);
         }
 
-        Ok(Self {
+        let a = Self {
             log_path: full_path,
             log_dir_max_size: max_size,
-        })
+        };
+
+        a.archive_current_log()?;
+        a.log_dir_size_check()?;
+        a.init_new_log()?;
+
+        Ok(a)
     }
 
     pub fn log_to_file(&self, item: &LogItem) -> Result<(), std::io::Error> {
@@ -109,7 +115,7 @@ impl LogFileHandler {
 
         let mut file = std::fs::OpenOptions::new()
             .append(true)
-            .open(&self.log_path)?;
+            .open(self.log_path.join("log.txt"))?;
 
         let log_line = format!("[{}] {}: {}\n", hms_time, item.kind, item.message.trim());
         print!("{}", log_line);
@@ -174,7 +180,7 @@ impl LogFileHandler {
     }
 
     pub fn init_new_log(&self) -> Result<(), std::io::Error> {
-        let _ = std::fs::write("log.txt", [])?;
+        std::fs::write(self.log_path.join("log.txt"), [])?;
         Ok(())
     }
 }
