@@ -16,13 +16,20 @@ jobs:
           - os-name: Linux-x86_64
             runs-on: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
+            apt_deps: libjack-jackd2-dev pkg-config
 
           - os-name: Linux-aarch64
             runs-on: ubuntu-24.04
             target: aarch64-unknown-linux-gnu
+            apt_deps: libjack-jackd2-dev:arm64 pkg-config gcc-aarch64-linux-gnu
+
 
     runs-on: ${{ matrix.platform.runs-on }}
     steps:
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.platform.apt_deps }}
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build binary
