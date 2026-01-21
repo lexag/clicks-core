@@ -34,6 +34,8 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y ${{ matrix.platform.apt_deps }}
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: release
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v1
         with:
