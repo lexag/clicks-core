@@ -3,7 +3,6 @@ name: deploy_all
 on:
   workflow_dispatch: 
   push:
-    branches: ["main"]
     tags: ["v*"]
   
 env:
