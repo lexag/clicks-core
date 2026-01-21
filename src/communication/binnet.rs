@@ -52,6 +52,7 @@ impl CommunicationInterface for BinaryNetHandler {
         let mut inputs: Vec<Request> = vec![];
         inputs.append(&mut self.input_queue);
         while let Some((buf, amt, src)) = self.port.recv() {
+            println!("rcv: {amt} from {src:?}");
             for subscriber in &mut self.subscribers {
                 if Some(subscriber.address)
                     == IpAddress::from_str_and_port(&src.ip().to_string(), src.port())
@@ -70,7 +71,7 @@ impl CommunicationInterface for BinaryNetHandler {
             };
             match msg {
                 Request::Ping => {}
-                Request::Subscribe(info) => {
+                Request::Subscribe(mut info) => {
                     let mut recognized_subscriber = false;
                     for subscriber in &mut self.subscribers {
                         if subscriber.address == info.address {

@@ -103,8 +103,8 @@ impl audio::source::AudioSource for Metronome {
                 } else {
                     self.last_beat_time = scheduled_time;
                 }
-                ctx.cbnet
-                    .notify(Message::Small(SmallMessage::BeatData(self.state)));
+                //ctx.cbnet
+                //    .notify(Message::Small(SmallMessage::BeatData(self.state)));
                 return Ok(
                     &self.click_buffers[if beat.count == 1 { 0 } else { 1 }][0..ctx.frame_size]
                 );
