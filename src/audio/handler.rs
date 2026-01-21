@@ -2,7 +2,7 @@ use crate::{
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
-    logger, CrossbeamNetwork,
+    logger::{LogItem}, CrossbeamNetwork,
 };
 use common::{
     cue::Show,
@@ -46,11 +46,11 @@ impl AudioHandler {
         let client_res = self.start_client();
         let client = match client_res {
             Err(err) => {
-                logger::log(
+                self.cbnet.log(LogItem::new(
                     format!("Could not open JACK client: {:#?}", err),
                     LogContext::AudioHandler,
                     LogKind::Error,
-                );
+                ));
                 self.shutdown();
                 return;
             }
@@ -64,11 +64,11 @@ impl AudioHandler {
         let ac = match client.activate_async(JACKNotificationHandler, processor) {
             Ok(val) => val,
             Err(err) => {
-                logger::log(
+                self.cbnet.log(LogItem::new(
                     format!("Error starting audio client: {err}"),
                     LogContext::AudioHandler,
                     LogKind::Error,
-                );
+                ));
                 return;
             }
         };
@@ -162,20 +162,20 @@ impl AudioHandler {
 
         match res {
             Ok(_) => {
-                logger::log(
+                self.cbnet.log(LogItem::new(
                     format!("Set port [{from}] -> [{to}] to {connect}"),
                     LogContext::AudioHandler,
                     LogKind::Note,
-                );
+                ));
 
                 true
             }
             Err(err) => {
-                logger::log(
+                self.cbnet.log(LogItem::new(
                     format!("JACK Connection Error: {err}"),
                     LogContext::AudioHandler,
                     LogKind::Error,
-                );
+                ));
                 false
             }
         }
@@ -231,11 +231,11 @@ impl AudioHandler {
         match client_res {
             Err(err) => Err(err),
             Ok((client, status)) => {
-                logger::log(
+                self.cbnet.log(LogItem::new(
                     format!("Opened JACK client ({status:?})"),
                     LogContext::AudioHandler,
                     LogKind::Note,
-                );
+                ));
                 Ok(client)
             }
         }
@@ -266,11 +266,11 @@ impl AudioHandler {
             new_name.retain(|c| c.is_numeric());
             new_name.parse::<usize>().unwrap_or_default()
         });
-        logger::log(
+        self.cbnet.log(LogItem::new(
             format!("Found {} system ports.", ports.len()),
             LogContext::AudioHandler,
             LogKind::Note,
-        );
+        ));
         ports
             .iter()
             .map(|name| {

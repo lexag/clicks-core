@@ -1,4 +1,4 @@
-use crate::logger;
+use crate::logger::{self, LogDispatcher, LogItem};
 use common::local::config::{LogContext, LogKind, SystemConfiguration};
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
@@ -39,8 +39,12 @@ impl Display for BootError {
     }
 }
 
-pub fn log_boot_error(err: BootError) {
-    logger::log(err.to_string(), LogContext::Boot, LogKind::Error);
+pub fn log_boot_error(log_dispatch: &LogDispatcher, err: BootError) {
+    log_dispatch.log(LogItem::new(
+        err.to_string(),
+        LogContext::Boot,
+        LogKind::Error,
+    ));
 }
 
 pub fn get_usb_update_path() -> Result<PathBuf, BootError> {
@@ -105,11 +109,11 @@ pub fn write_default_config() -> Result<(), BootError> {
 }
 
 pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
-    logger::log(
-        "Saving configuration file...".to_string(),
-        LogContext::Boot,
-        LogKind::Note,
-    );
+    //logger::log(
+    //    "Saving configuration file...".to_string(),
+    //    LogContext::Boot,
+    //    LogKind::Note,
+    //);
 
     let config_str = match serde_json::to_string(&config) {
         Ok(val) => val,
@@ -122,12 +126,12 @@ pub fn write_config(config: SystemConfiguration) -> Result<(), BootError> {
     }
 }
 
-pub fn copy_logs(path: PathBuf) -> Result<(), BootError> {
-    match std::fs::copy(logger::get_path(), path.join("logs/")) {
-        Ok(_) => Ok(()),
-        Err(err) => Err(BootError::LogCopyFailure(err.to_string())),
-    }
-}
+//pub fn copy_logs(path: PathBuf) -> Result<(), BootError> {
+//    match std::fs::copy(logger::get_path(), path.join("logs/")) {
+//        Ok(_) => Ok(()),
+//        Err(err) => Err(BootError::LogCopyFailure(err.to_string())),
+//    }
+//}
 
 pub fn try_patch() -> bool {
     if let Ok(mut child) = std::process::Command::new("mv")

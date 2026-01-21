@@ -37,11 +37,11 @@ impl NetworkPort {
         match self.socket.send_to(content, address) {
             Ok(_) => {}
             Err(err) => {
-                logger::log(
-                    format!("Subscriber send error: {err}"),
-                    LogContext::Network,
-                    LogKind::Error,
-                );
+                //logger::log(
+                //    format!("Subscriber send error: {err}"),
+                //    LogContext::Network,
+                //    LogKind::Error,
+                //);
             }
         }
     }
