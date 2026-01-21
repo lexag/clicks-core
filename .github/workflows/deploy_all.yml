@@ -29,7 +29,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ${{ matrix.platform.apt_deps }}
+          sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y ${{ matrix.platform.apt_deps }}
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build binary
