@@ -3,7 +3,7 @@ use common::{
     event::EventCursor,
     local::{
         config::{LogContext, LogKind},
-        status::CombinedStatus,
+        status::{AudioSourceState, BeatState, CombinedStatus},
     },
     mem::typeflags::MessageType, protocol::{message::{LargeMessage, Message, SmallMessage}, request::ControlAction},
 };
@@ -150,7 +150,13 @@ impl AudioProcessor {
 
         self.status.transport.ltc = self.status.time_state();
 
-        if self.status.beat_state().beat_idx != current_beat {
+        let new_idx = self.status.beat_state().beat_idx;
+        if let AudioSourceState::BeatStatus(state) = &mut self.status.sources[0] {
+            state.beat = self.status.cue.cue.get_beat(new_idx).unwrap_or_default();
+        }
+
+        if new_idx != current_beat {
+            self.notify_push(MessageType::BeatData);
             self.send_beat_events_to_children(self.status.beat_state().beat_idx, false);
         }
     }
@@ -199,6 +205,10 @@ impl AudioProcessor {
         while cursor.at_or_before(beat_idx)
             && let Some(event) = cursor.get_next()
         {
+            if pre_event && let Some(desc) = event.event {
+                self.cbnet.notify(Message::Small(SmallMessage::EventOccured(desc)));
+            }
+
             for source in &mut self.sources {
                 if pre_event {
                     source.source_device.event_will_occur(&self.ctx, event);
@@ -249,7 +259,7 @@ impl ProcessHandler for AudioProcessor {
         }
 
         // Warn of upcoming events
-        if self.ctx.will_overrun_frame() {
+        if self.ctx.will_overrun_frame() && self.status.transport.running {
             self.send_beat_events_to_children(self.status.beat_state().next_beat_idx, true);
         }
 
