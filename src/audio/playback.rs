@@ -1,6 +1,5 @@
 use crate::{
-    audio::source::{AudioSource, AudioSourceContext, SourceConfig},
-    logger,
+    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, cbnet::CrossbeamNetwork, logger::{self, LogItem}
 };
 use arc_swap::ArcSwap;
 use common::{
@@ -62,14 +61,16 @@ pub struct PlaybackHandler {
     clips: Vec<Vec<AudioClip>>,
     show_path: PathBuf,
     num_channels: usize,
+    cbnet: CrossbeamNetwork,
 }
 
 impl PlaybackHandler {
-    pub fn new(show_path: PathBuf, num_channels: usize) -> PlaybackHandler {
+    pub fn new(cbnet: CrossbeamNetwork, show_path: PathBuf, num_channels: usize) -> PlaybackHandler {
         PlaybackHandler {
             show_path,
             clips: Vec::new(),
             num_channels,
+            cbnet,
         }
     }
 
@@ -101,11 +102,11 @@ impl PlaybackHandler {
         ) {
             Ok(val) => val,
             Err(err) => {
-                logger::log(
+                self.cbnet.log(LogItem::new(
                     format!("Error opening playback media: {}", err),
                     LogContext::AudioSource,
                     LogKind::Error,
-                );
+                ));
                 return vec![0.0; 48000];
             }
         };
@@ -114,11 +115,11 @@ impl PlaybackHandler {
                 .samples::<f32>()
                 .map(|sample| {
                     if let Err(err) = sample {
-                        logger::log(
+                        self.cbnet.log(LogItem::new(
                             format!("Error opening playback media: {}", err),
                             LogContext::AudioSource,
                             LogKind::Error,
-                        );
+                        ));
                         return 0.0;
                     }
                     sample.expect("Err already handled.")
@@ -128,11 +129,11 @@ impl PlaybackHandler {
                 .samples::<i32>()
                 .map(|sample| {
                     if let Err(err) = sample {
-                        logger::log(
+                        self.cbnet.log(LogItem::new(
                             format!("Error opening playback media: {}", err),
                             LogContext::AudioSource,
                             LogKind::Error,
-                        );
+                        ));
                         return 0.0;
                     }
                     (sample.expect("Err already handled.") as f32).div(32768.0)
@@ -227,7 +228,7 @@ mod tests {
     #[test]
 
     fn clips_counter() {
-        let pbh = PlaybackHandler::new(PathBuf::new(), 32);
+        let pbh = PlaybackHandler::new(CrossbeamNetwork::new(), PathBuf::new(), 32);
         for length in [0, 1, 2, 56, 100] {
             for channel in (0..34).step_by(2) {
                 let mut cue = Cue::empty();

@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::{
     communication::{interface::CommunicationInterface, netport::NetworkPort},
-    logger,
+    logger::{self, LogDispatcher, LogItem},
 };
 use chrono::{DateTime, Utc};
 use common::{
@@ -24,17 +24,17 @@ pub struct BinaryNetHandler {
 }
 
 impl BinaryNetHandler {
-    pub fn new(port: usize) -> Self {
+    pub fn new(logger: &LogDispatcher, port: usize) -> Self {
         let a = Self {
             port: NetworkPort::new(port),
             subscribers: vec![],
             input_queue: vec![],
         };
-        logger::log(
+        logger.log(LogItem::new(
             format!("opened binnet port {}", a.port.socket.local_addr().unwrap()),
             LogContext::Network,
             LogKind::Note,
-        );
+        ));
         a
     }
 
@@ -79,16 +79,6 @@ impl CommunicationInterface for BinaryNetHandler {
                         }
                     }
                     if !recognized_subscriber {
-                        logger::log(
-                            format!(
-                                "New subscriber: {} at [{}] subscribing to {:?}.",
-                                info.identifier.str(),
-                                info.address,
-                                info.message_kinds
-                            ),
-                            LogContext::Network,
-                            LogKind::Note,
-                        );
                         self.subscribers.push(info);
                     }
                     self.publish_subscribers();

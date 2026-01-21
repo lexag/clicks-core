@@ -16,6 +16,7 @@ use crate::{
     communication::{
         binnet::BinaryNetHandler, interface::CommunicationInterface, osc::OscNetHandler,
     },
+    logger::{LogDispatcher, LogItem},
 };
 use common::{
     cue::{Cue, Show, ShowBuilder},
@@ -31,7 +32,10 @@ use std::time::{Duration, Instant};
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
-    logger::init();
+    let cbnet = CrossbeamNetwork::new();
+    let log_dispatcher = LogDispatcher::new(cbnet.clone());
+    let mut nh = BinaryNetHandler::new(&log_dispatcher, 8081);
+    let mut osch = OscNetHandler::new(8082);
 
     #[cfg(feature = "i2c-ui")]
     {
@@ -71,7 +75,7 @@ fn main() {
     let show_path = match boot::get_show_path() {
         Ok(val) => val,
         Err(err) => {
-            boot::log_boot_error(err);
+            boot::log_boot_error(&log_dispatcher, err);
             return;
         }
     };
@@ -111,13 +115,8 @@ fn main() {
         std::thread::sleep(Duration::from_secs(5));
         let _ = hardware::display::startup();
     }
-
-    let cbnet = CrossbeamNetwork::new();
-
-    let mut pbh = PlaybackHandler::new(show_path.clone(), 30);
+    let mut pbh = PlaybackHandler::new(cbnet.clone(), show_path.clone(), 30);
     let mut ah = AudioHandler::new(32, cbnet.clone());
-    let mut nh = BinaryNetHandler::new(8081);
-    let mut osch = OscNetHandler::new(8082);
 
     let mut last_heartbeat_time = Instant::now();
     let mut loop_count = 0;
@@ -178,11 +177,11 @@ fn main() {
                 }
                 Request::Shutdown => {
                     let _ = boot::write_config(config);
-                    logger::log(
+                    log_dispatcher.log(LogItem::new(
                         "Shutdown. Goodnight.".to_string(),
                         LogContext::Boot,
                         LogKind::Note,
-                    );
+                    ));
                     nh.notify(Message::Small(SmallMessage::ShutdownOccured));
                     ah.shutdown();
                     run_flag = false;

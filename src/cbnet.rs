@@ -35,8 +35,8 @@ impl CrossbeamNetwork {
         let _ = self.cmd_tx.try_send(cmd);
     }
 
-    pub fn log(&self, cmd: ControlAction) {
-        let _ = self.cmd_tx.try_send(cmd);
+    pub fn log(&self, log_item: LogItem) {
+        let _ = self.log_tx.try_send(log_item);
     }
 }
 impl Default for CrossbeamNetwork {

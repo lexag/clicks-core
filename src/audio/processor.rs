@@ -10,9 +10,7 @@ use common::{
 use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
 
 use crate::{
-    CrossbeamNetwork,
-    audio::source::{AudioSource, AudioSourceContext, SourceConfig},
-    logger,
+    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, logger::{self, LogItem}, CrossbeamNetwork
 };
 
 pub struct AudioProcessor {
@@ -79,11 +77,11 @@ impl AudioProcessor {
     }
 
     fn handle_command(&mut self, command: ControlAction) {
-        logger::log(
+        self.cbnet.log(LogItem::new(
             format!("ControlAction: {command}"),
             LogContext::AudioProcessor,
             LogKind::Command,
-        );
+        ));
         match command {
             ControlAction::DumpStatus => self.send_all_status(),
             ControlAction::TransportStart => {
@@ -172,11 +170,11 @@ impl AudioProcessor {
             }
             Control::Continue
         } else {
-            logger::log(
+            self.cbnet.log(LogItem::new(
                 format!("Audio error occured in source {}.", idx),
                 LogContext::AudioProcessor,
                 LogKind::Error,
-            );
+            ));
             Control::Quit
         }
     }
@@ -221,11 +219,11 @@ impl ProcessHandler for AudioProcessor {
                 Err(crossbeam_channel::TryRecvError::Empty) => {
                     break;
                 }
-                Err(err) => logger::log(
+                Err(err) => self.cbnet.log(LogItem::new(
                     format!("Error reading command: {}", err),
                     LogContext::AudioProcessor,
                     LogKind::Error,
-                ),
+                )),
             }
         }
         self.update_context(c, ps);
