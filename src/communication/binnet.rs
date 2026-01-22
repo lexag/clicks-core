@@ -80,7 +80,10 @@ impl CommunicationInterface for BinaryNetHandler {
                         }
                     }
                     if !recognized_subscriber {
-                        self.subscribers.push(info);
+                        self.subscribers.push(SubscriberInfo {
+                            last_contact: Utc::now().timestamp() as u128,
+                            ..info
+                        });
                     }
                     self.publish_subscribers();
                     self.input_queue.push(Request::NotifySubscribers);
@@ -153,15 +156,11 @@ impl CommunicationInterface for BinaryNetHandler {
             },
         );
 
-        //logger::log(
-        //    format!(
-        //        "sent Message: {:?}\n {}\n({} bytes)\n",
-        //        notification.to_type(),
-        //        hex::encode_upper(&buffer),
-        //        buffer.len()
-        //    ),
-        //    LogContext::Network,
-        //    LogKind::Debug,
+        //println!(
+        //    "sent Message: {:?}\n {}\n({} bytes)\n",
+        //    notification.to_type(),
+        //    hex::encode_upper(&buffer),
+        //    buffer.len()
         //);
 
         for subscriber in &self.subscribers {

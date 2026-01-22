@@ -4,7 +4,7 @@ use common::{
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CrossbeamNetwork {
     cmd_tx: Sender<ControlAction>,
     pub cmd_rx: Receiver<ControlAction>,
