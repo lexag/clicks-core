@@ -366,7 +366,7 @@ impl AudioSource for PlaybackDevice {
                 (self.current_clip, self.active, self.current_sample) =
                     self.calculate_time_at_beat(ctx, beat_idx);
                 // TODO: Support multiple and mixed sample rates
-                self.current_sample -= (ctx.transport.us_to_next_beat as i32) * 48 / 1000
+                self.current_sample -= (ctx.beat.us_to_next_beat as i32) * 48 / 1000
             }
             _ => {}
         }

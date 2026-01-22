@@ -146,8 +146,6 @@ impl AudioProcessor {
             .requested_vlt_action
             .vlt(self.status.transport.vlt);
 
-        self.status.transport.ltc = self.status.time_state();
-
         let new_idx = self.status.beat_state().beat_idx;
         if let AudioSourceState::BeatStatus(state) = &mut self.status.sources[0] {
             state.beat = self.status.cue.cue.get_beat(new_idx).unwrap_or_default();

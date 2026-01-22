@@ -70,9 +70,9 @@ impl audio::source::AudioSource for Metronome {
         } else {
             scheduled_time = u64::MAX
         };
-        self.transport.us_to_next_beat =
+        self.state.us_to_next_beat =
             if scheduled_time > ctx.jack_time && scheduled_time < u64::MAX / 2 {
-                scheduled_time - ctx.jack_time
+                (scheduled_time - ctx.jack_time) as u32
             } else {
                 0
             };
