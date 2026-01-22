@@ -141,11 +141,11 @@ impl TimecodeSource {
             while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event {
+                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event && event.location == i {
                     time = new_time;
                 }
             }
-        time.add_us(ctx.cue.get_beat(i).unwrap_or_default().length as u64);
+            time.add_us(ctx.cue.get_beat(i).unwrap_or_default().length as u64);
         }
         time
     }
@@ -169,12 +169,16 @@ impl audio::source::AudioSource for TimecodeSource {
                 self.state.running = true;
             }
             ControlAction::TransportJumpBeat(beat_idx) => {
-                self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
+                if !ctx.transport.running {
+                    self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
+                }
             }
             ControlAction::TransportSeekBeat(beat_idx) => {
-                self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
-                self.state.ltc
-                    .sub_us(ctx.beat.us_to_next_beat as u64)
+                if !ctx.transport.running {
+                    self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
+                    self.state.ltc
+                        .sub_us(ctx.beat.us_to_next_beat as u64)
+                        }
             }
             _ => {}
         }
@@ -220,8 +224,11 @@ impl audio::source::AudioSource for TimecodeSource {
 
     fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
 
-    fn event_will_occur(&mut self, _ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         if let Some(EventDescription::TimecodeEvent { time }) = event.event {
+            if ctx.beat.next_beat_idx != event.location {
+                return;
+            }
             // if this cycle will run over the edge into next beat, we set the new timecode
             // immediately AND restart the frame progress from 0. This is important, as
             // otherwise, the frame time would change mid-frame, and confusion follows.

@@ -104,8 +104,8 @@ impl AudioProcessor {
 
             ControlAction::LoadCueByIndex(idx) => {
                 if idx < self.status.show.cues.len() as u8 {
-                    self.load_cue(self.status.show.cues[idx as usize].clone());
                     self.status.cue.cue_idx = idx as u16;
+                    self.load_cue(self.status.show.cues[idx as usize].clone());
                 }
             }
 
@@ -114,6 +114,10 @@ impl AudioProcessor {
             }
 
             ControlAction::ChangeJumpMode(jumpmode) => {
+                println!("{}, {}, {}", jumpmode, 
+
+                self.status.transport.vlt , jumpmode.vlt(self.status.transport.vlt)
+                    );
                 self.status.transport.vlt = jumpmode.vlt(self.status.transport.vlt);
                 self.notify_push(MessageType::TransportData);
             }
@@ -206,17 +210,17 @@ impl AudioProcessor {
         while cursor.at_or_before(beat_idx)
             && let Some(event) = cursor.get_next()
         {
-            if pre_event && let Some(desc) = event.event {
-                self.cbnet.notify(Message::Small(SmallMessage::EventOccured(desc)));
-            }
-
-            for source in &mut self.sources {
-                if pre_event {
-                    source.source_device.event_will_occur(&self.ctx, event);
-                } else {
-                    source.source_device.event_occured(&self.ctx, event);
+                if pre_event && let Some(desc) = event.event {
+                    self.cbnet.notify(Message::Small(SmallMessage::EventOccured(desc)));
                 }
-            }
+
+                for source in &mut self.sources {
+                    if pre_event  {
+                        source.source_device.event_will_occur(&self.ctx, event);
+                    } else {
+                        source.source_device.event_occured(&self.ctx, event);
+                    }
+                }
         }
     }
 }
