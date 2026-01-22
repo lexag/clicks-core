@@ -1,6 +1,6 @@
 use crate::audio;
 use crate::audio::source::AudioSourceContext;
-use common::event::{EventDescription, JumpRequirement};
+use common::event::{EventDescription, JumpModeChange, JumpRequirement};
 use common::local::status::{AudioSourceState, BeatState, TransportState};
 use common::protocol::message::{Message, SmallMessage};
 use common::protocol::request::ControlAction;
@@ -70,13 +70,15 @@ impl audio::source::AudioSource for Metronome {
         } else {
             scheduled_time = u64::MAX
         };
-        self.transport.us_to_next_beat =
+        self.state.us_to_next_beat =
             if scheduled_time > ctx.jack_time && scheduled_time < u64::MAX / 2 {
-                scheduled_time - ctx.jack_time
+                (scheduled_time - ctx.jack_time) as u32
             } else {
                 0
             };
-        AudioSourceState::BeatStatus(self.state)
+        let ret = AudioSourceState::BeatStatus(self.state);
+        self.state.requested_vlt_action = JumpModeChange::None;
+        ret
     }
 
     fn send_buffer(

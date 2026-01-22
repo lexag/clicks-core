@@ -2,33 +2,31 @@ use crate::audio::{self, source::AudioSourceContext};
 
 use common::{
     event::{EventCursor, EventDescription},
-    local::status::AudioSourceState,
+    local::status::{AudioSourceState, TimecodeState},
     mem::smpte::TimecodeInstant,
     protocol::request::ControlAction,
 };
 
 pub struct TimecodeSource {
-    pub active: bool,
     pub frame_rate: u8,
     pub drop_frame: bool,
     pub color_framing: bool,
     pub external_clock: bool,
     volume: f32,
     frame_buffer: [f32; 8192],
-    current_time: TimecodeInstant,
+    state: TimecodeState,
 }
 
 impl Default for TimecodeSource {
     fn default() -> Self {
         Self {
-            active: false,
             frame_rate: 25,
             drop_frame: false,
             color_framing: false,
             external_clock: false,
             volume: 1.0,
             frame_buffer: [0.0f32; 8192],
-            current_time: TimecodeInstant::new(25),
+            state: TimecodeState { running: false, ltc: TimecodeInstant::new(25) }
         }
     }
 }
@@ -37,14 +35,7 @@ impl TimecodeSource {
     pub fn new(frame_rate: u8) -> TimecodeSource {
         TimecodeSource {
             frame_rate,
-            current_time: TimecodeInstant {
-                frame_rate,
-                h: 0,
-                m: 0,
-                s: 0,
-                f: 0,
-                frame_progress: 0,
-            },
+            state: TimecodeState { running: false, ltc: TimecodeInstant::new(frame_rate) },
             ..Default::default()
         }
     }
@@ -60,28 +51,28 @@ impl TimecodeSource {
     }
 
     fn generate_smpte_frame_bits(&self, user_bits: u32) -> u128 {
-        let h0: u128 = (self.current_time.h.abs() % 10)
+        let h0: u128 = (self.state.ltc.h.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let h1: u128 = (self.current_time.h.abs() / 10)
+        let h1: u128 = (self.state.ltc.h.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let m0: u128 = (self.current_time.m.abs() % 10)
+        let m0: u128 = (self.state.ltc.m.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let m1: u128 = (self.current_time.m.abs() / 10)
+        let m1: u128 = (self.state.ltc.m.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let s0: u128 = (self.current_time.s.abs() % 10)
+        let s0: u128 = (self.state.ltc.s.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let s1: u128 = (self.current_time.s.abs() / 10)
+        let s1: u128 = (self.state.ltc.s.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f0: u128 = (self.current_time.f.abs() % 10)
+        let f0: u128 = (self.state.ltc.f.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f1: u128 = (self.current_time.f.abs() / 10)
+        let f1: u128 = (self.state.ltc.f.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
         let user_bits: u32 = 0;
@@ -145,62 +136,63 @@ impl TimecodeSource {
             frame_progress: 0,
             frame_rate: self.frame_rate,
         };
-        let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
             while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event {
+                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event && event.location == i {
                     time = new_time;
-                    time_off_us = 0;
                 }
             }
-            time_off_us += ctx.cue.get_beat(i).unwrap_or_default().length as u64;
+            time.add_us(ctx.cue.get_beat(i).unwrap_or_default().length as u64);
         }
-        time.add_us(time_off_us);
         time
     }
 }
 
 impl audio::source::AudioSource for TimecodeSource {
     fn get_status(&mut self, _ctx: &AudioSourceContext) -> AudioSourceState {
-        AudioSourceState::TimeStatus(self.current_time)
+        AudioSourceState::TimeStatus(self.state)
     }
 
     fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
         match command {
             ControlAction::TransportZero => {
-                self.current_time.set_time(0, 0, 0, 0);
-                self.current_time.frame_progress = 0;
+                self.state.ltc.set_time(0, 0, 0, 0);
+                self.state.ltc.frame_progress = 0;
             }
             ControlAction::TransportStop => {
-                self.active = false;
+                self.state.running = false;
             }
             ControlAction::TransportStart => {
-                self.active = true;
+                self.state.running = true;
             }
             ControlAction::TransportJumpBeat(beat_idx) => {
-                self.current_time = self.calculate_time_at_beat(ctx, beat_idx);
+                if !ctx.transport.running {
+                    self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
+                }
             }
             ControlAction::TransportSeekBeat(beat_idx) => {
-                self.current_time = self.calculate_time_at_beat(ctx, beat_idx);
-                self.current_time
-                    .sub_us(ctx.transport.us_to_next_beat)
+                if !ctx.transport.running {
+                    self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
+                    self.state.ltc
+                        .sub_us(ctx.beat.us_to_next_beat as u64)
+                        }
             }
             _ => {}
         }
     }
 
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
-        let last_cycle_frame = self.current_time;
+        let last_cycle_frame = self.state.ltc;
 
-        if self.active {
-            self.current_time
+        if self.state.running {
+            self.state.ltc
                 .add_progress((ctx.frame_size * self.frame_rate as usize * 65536 / ctx.sample_rate) as u16);
         }
 
-        if !ctx.transport.running || !self.active {
+        if !ctx.transport.running || !self.state.running {
             return Ok(self.silence(ctx.frame_size));
         }
 
@@ -209,9 +201,9 @@ impl audio::source::AudioSource for TimecodeSource {
         let samples_per_bit: usize = samples_per_frame / 80;
 
         let subframe_sample =
-            self.current_time.frame_progress as u64 * samples_per_frame as u64 / 65536;
+            self.state.ltc.frame_progress as u64 * samples_per_frame as u64 / 65536;
 
-        if last_cycle_frame != self.current_time {
+        if last_cycle_frame != self.state.ltc {
             self.frame_buffer.copy_within(
                 samples_per_frame..2 * samples_per_frame,
                 0,
@@ -232,16 +224,21 @@ impl audio::source::AudioSource for TimecodeSource {
 
     fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
 
-    fn event_will_occur(&mut self, _ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         if let Some(EventDescription::TimecodeEvent { time }) = event.event {
+            if ctx.beat.next_beat_idx != event.location {
+                return;
+            }
             // if this cycle will run over the edge into next beat, we set the new timecode
             // immediately AND restart the frame progress from 0. This is important, as
             // otherwise, the frame time would change mid-frame, and confusion follows.
             // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
             // frame starts up to 1 whole cycle too early, but it is negligible, as the
             // normal accuracy is only 1/fps (>33ms)
-            self.active = true;
-            self.current_time = time;
+            self.state.ltc = time;
+            // FIXME: This is temporary solution for stopping timecode. Needs proper support from
+            // clicks-common. When a timecode event is set above 24 hours, it will stop
+            self.state.running = time.h <= 24;
         }
     }
 }
