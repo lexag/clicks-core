@@ -2,7 +2,7 @@ use common::{
     cue::{Cue, Show},
     event::EventCursor,
     local::{
-        config::{LogContext, LogKind},
+        config::{LogContext, LogItem, LogKind},
         status::{AudioSourceState, BeatState, CombinedStatus},
     },
     mem::typeflags::MessageType, protocol::{message::{LargeMessage, Message, SmallMessage}, request::ControlAction},
@@ -10,7 +10,7 @@ use common::{
 use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
 
 use crate::{
-    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, logger::{self, LogItem}, CrossbeamNetwork
+    audio::source::{AudioSourceContext, SourceConfig}, CrossbeamNetwork
 };
 
 pub struct AudioProcessor {

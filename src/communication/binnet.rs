@@ -2,12 +2,12 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::{
     communication::{interface::CommunicationInterface, netport::NetworkPort},
-    logger::{self, LogDispatcher, LogItem},
+    logger::LogDispatcher,
 };
 use chrono::{DateTime, Utc};
 use common::{
     local::{
-        config::{LogContext, LogKind},
+        config::{LogContext, LogItem, LogKind},
         status::NetworkStatus,
     },
     mem::network::{IpAddress, SubscriberInfo},

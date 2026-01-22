@@ -1,5 +1,5 @@
-use crate::logger::{self, LogDispatcher, LogItem};
-use common::local::config::{LogContext, LogKind, SystemConfiguration};
+use crate::logger::LogDispatcher;
+use common::local::config::{LogContext, LogItem, LogKind, SystemConfiguration};
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]

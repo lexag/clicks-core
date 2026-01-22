@@ -1,12 +1,12 @@
 use crate::{
-    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, cbnet::CrossbeamNetwork, logger::{self, LogItem}
+    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, cbnet::CrossbeamNetwork
 };
 use arc_swap::ArcSwap;
 use common::{
     cue::{Cue, Show},
     event::{EventCursor, EventDescription},
     local::{
-        config::{LogContext, LogKind},
+        config::{LogContext, LogItem, LogKind},
         status::{AudioSourceState, PlaybackState},
     },
     protocol::request::ControlAction,

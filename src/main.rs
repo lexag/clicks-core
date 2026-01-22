@@ -16,11 +16,11 @@ use crate::{
     communication::{
         binnet::BinaryNetHandler, interface::CommunicationInterface, osc::OscNetHandler,
     },
-    logger::{LogDispatcher, LogItem},
+    logger::LogDispatcher,
 };
 use common::{
     cue::{Cue, Show, ShowBuilder},
-    local::config::{LogContext, LogKind, SystemConfiguration},
+    local::config::{LogContext, LogItem, LogKind, SystemConfiguration},
     mem::str::StaticString,
     protocol::{
         message::{Heartbeat, LargeMessage, Message, SmallMessage},

@@ -1,5 +1,7 @@
-use crate::logger::LogItem;
-use common::protocol::{message::Message, request::ControlAction};
+use common::{
+    local::config::LogItem,
+    protocol::{message::Message, request::ControlAction},
+};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 #[derive(Clone)]
