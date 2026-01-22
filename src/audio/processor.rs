@@ -46,7 +46,9 @@ impl AudioProcessor {
         self.notify_push(MessageType::TransportData);
         self.notify_push(MessageType::BeatData);
         self.notify_push(MessageType::CueData);
+        self.notify_push(MessageType::SmallCueData);
         self.notify_push(MessageType::ShowData);
+        self.notify_push(MessageType::TimecodeData);
     }
 
     fn notify_push(&self, message_type: MessageType) {
@@ -54,7 +56,9 @@ impl AudioProcessor {
             MessageType::TransportData => Message::Small(SmallMessage::TransportData(self.status.transport)),
             MessageType::BeatData => Message::Small(SmallMessage::BeatData(self.status.beat_state())),
             MessageType::CueData => Message::Large(LargeMessage::CueData(self.status.cue.clone())),
+            MessageType::SmallCueData => Message::Small(SmallMessage::CueData(common::local::status::SmallCueState { cue_idx: self.status.cue.cue_idx, cue_metadata: self.status.cue.cue.metadata })),
             MessageType::ShowData => Message::Large(LargeMessage::ShowData(self.status.show.clone())),
+            MessageType::TimecodeData => Message::Small(SmallMessage::TimecodeData(self.status.time_state())),
             _ => {
                 return;
             }
@@ -68,6 +72,7 @@ impl AudioProcessor {
         self.cbnet.command(ControlAction::TransportStop);
         self.cbnet.command(ControlAction::TransportZero);
         self.notify_push(MessageType::CueData);
+        self.notify_push(MessageType::SmallCueData);
     }
 
     fn load_show(&mut self, show: Show) {
@@ -267,7 +272,11 @@ impl ProcessHandler for AudioProcessor {
             };
         }
 
-        if self.status.transport.running || self.status_changed_flag {
+        if self.status.transport.running && self.status.time_state().running {
+            self.notify_push(MessageType::TimecodeData);
+        }
+
+        if self.status_changed_flag {
             self.notify_push(MessageType::TransportData);
             self.status_changed_flag = false;
         }
