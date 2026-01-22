@@ -8,7 +8,6 @@ use common::{
 };
 
 pub struct TimecodeSource {
-    pub active: bool,
     pub frame_rate: u8,
     pub drop_frame: bool,
     pub color_framing: bool,
@@ -21,7 +20,6 @@ pub struct TimecodeSource {
 impl Default for TimecodeSource {
     fn default() -> Self {
         Self {
-            active: false,
             frame_rate: 25,
             drop_frame: false,
             color_framing: false,
@@ -138,7 +136,6 @@ impl TimecodeSource {
             frame_progress: 0,
             frame_rate: self.frame_rate,
         };
-        let mut time_off_us = 0_u64;
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
             while cursor.at_or_before(beat_idx)
@@ -146,12 +143,10 @@ impl TimecodeSource {
             {
                 if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event {
                     time = new_time;
-                    time_off_us = 0;
                 }
             }
-            time_off_us += ctx.cue.get_beat(i).unwrap_or_default().length as u64;
+        time.add_us(ctx.cue.get_beat(i).unwrap_or_default().length as u64);
         }
-        time.add_us(time_off_us);
         time
     }
 }
@@ -168,10 +163,10 @@ impl audio::source::AudioSource for TimecodeSource {
                 self.state.ltc.frame_progress = 0;
             }
             ControlAction::TransportStop => {
-                self.active = false;
+                self.state.running = false;
             }
             ControlAction::TransportStart => {
-                self.active = true;
+                self.state.running = true;
             }
             ControlAction::TransportJumpBeat(beat_idx) => {
                 self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
@@ -188,12 +183,12 @@ impl audio::source::AudioSource for TimecodeSource {
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         let last_cycle_frame = self.state.ltc;
 
-        if self.active {
+        if self.state.running {
             self.state.ltc
                 .add_progress((ctx.frame_size * self.frame_rate as usize * 65536 / ctx.sample_rate) as u16);
         }
 
-        if !ctx.transport.running || !self.active {
+        if !ctx.transport.running || !self.state.running {
             return Ok(self.silence(ctx.frame_size));
         }
 
@@ -233,8 +228,10 @@ impl audio::source::AudioSource for TimecodeSource {
             // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
             // frame starts up to 1 whole cycle too early, but it is negligible, as the
             // normal accuracy is only 1/fps (>33ms)
-            self.active = true;
             self.state.ltc = time;
+            // FIXME: This is temporary solution for stopping timecode. Needs proper support from
+            // clicks-common. When a timecode event is set above 24 hours, it will stop
+            self.state.running = time.h <= 24;
         }
     }
 }
