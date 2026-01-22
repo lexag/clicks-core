@@ -21,7 +21,7 @@ pub struct AudioSourceContext {
 
 impl AudioSourceContext {
     pub fn samples_to_next_beat(&self) -> usize {
-        (self.transport.us_to_next_beat as usize / 10) * (self.sample_rate / 100) / 1000
+        (self.beat.us_to_next_beat as usize / 10) * (self.sample_rate / 100) / 1000
     }
 
     pub fn will_overrun_frame(&self) -> bool {

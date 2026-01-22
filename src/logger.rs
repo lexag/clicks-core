@@ -1,29 +1,9 @@
 use crate::{cbnet::CrossbeamNetwork, hardware};
-use chrono::Utc;
 use common::{
-    local::config::{LogContext, LogKind},
+    local::config::{LogContext, LogItem, LogKind},
     mem::time::format_hms,
 };
 use std::{io::Write, path::PathBuf, str::FromStr};
-
-#[derive(Default, Clone)]
-pub struct LogItem {
-    message: String,
-    kind: LogKind,
-    context: LogContext,
-    time: u64,
-}
-
-impl LogItem {
-    pub fn new(msg: String, context: LogContext, kind: LogKind) -> Self {
-        Self {
-            message: msg,
-            kind,
-            context,
-            time: Utc::now().timestamp_millis() as u64,
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct LogDispatcher {
@@ -72,6 +52,10 @@ impl LogDispatcher {
             if let Some(handler) = &self.file_handler {
                 handler.log_to_file(&item)?;
             }
+
+            self.cbnet.notify(common::protocol::message::Message::Large(
+                common::protocol::message::LargeMessage::Log(item.clone()),
+            ));
             // also send message
         }
         if item.kind.intersects(LogKind::Error | LogKind::Warning) {
@@ -152,7 +136,7 @@ impl LogFileHandler {
     }
 
     pub fn log_dir_size_check(&self) -> Result<(), std::io::Error> {
-        if self.log_dir_size()? > 1024 * 1024 * 1024 {
+        if self.log_dir_size()? > self.log_dir_max_size {
             self.delete_old_logs(30)?
         }
         Ok(())

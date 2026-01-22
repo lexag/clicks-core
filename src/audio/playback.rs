@@ -1,12 +1,12 @@
 use crate::{
-    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, cbnet::CrossbeamNetwork, logger::{self, LogItem}
+    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, cbnet::CrossbeamNetwork
 };
 use arc_swap::ArcSwap;
 use common::{
     cue::{Cue, Show},
     event::{EventCursor, EventDescription},
     local::{
-        config::{LogContext, LogKind},
+        config::{LogContext, LogItem, LogKind},
         status::{AudioSourceState, PlaybackState},
     },
     protocol::request::ControlAction,
@@ -29,9 +29,9 @@ impl Debug for AudioClip {
 }
 
 impl AudioClip {
-    pub fn new() -> Self {
+    pub fn new(idx: usize) -> Self {
         Self {
-            clip_idx: Arc::new(ArcSwap::from_pointee(0)),
+            clip_idx: Arc::new(ArcSwap::from_pointee(idx)),
             buffer: Arc::new(ArcSwap::from_pointee(vec![])),
             local_buffer: [0.0f32; LOCAL_BUF_SIZE],
         }
@@ -57,6 +57,7 @@ impl AudioClip {
     }
 }
 
+#[derive(Debug)]
 pub struct PlaybackHandler {
     clips: Vec<Vec<AudioClip>>,
     show_path: PathBuf,
@@ -182,8 +183,8 @@ impl PlaybackHandler {
         self.clips.clear();
         for (channel, mc_channel) in max_clips.iter().enumerate().take(self.num_channels) {
             self.clips.push(Vec::new());
-            for _ in 0..*mc_channel {
-                self.clips[channel].push(AudioClip::new());
+            for i in 0..*mc_channel {
+                self.clips[channel].push(AudioClip::new(i));
             }
         }
     }
@@ -208,13 +209,11 @@ impl PlaybackHandler {
     }
 
     pub fn load_cue(&self, cue: Cue) {
-        println!("loading cue (pbh)");
         for (channel_idx, clips) in self.clip_idxs_in_cue(&cue).iter_mut().enumerate() {
             clips.sort();
             for (clip_idx, clip) in clips.iter().enumerate() {
                 let buf = self.load_wav_buf(channel_idx, *clip);
                 self.clips[channel_idx][clip_idx].write(*clip as usize, buf);
-                println!("loading clip {} on channel {}", channel_idx, clip_idx);
             }
         }
     }
@@ -366,7 +365,7 @@ impl AudioSource for PlaybackDevice {
                 (self.current_clip, self.active, self.current_sample) =
                     self.calculate_time_at_beat(ctx, beat_idx);
                 // TODO: Support multiple and mixed sample rates
-                self.current_sample -= (ctx.transport.us_to_next_beat as i32) * 48 / 1000
+                self.current_sample -= (ctx.beat.us_to_next_beat as i32) * 48 / 1000
             }
             _ => {}
         }
@@ -392,21 +391,20 @@ impl AudioSource for PlaybackDevice {
                 clip_idx,
                 sample,
             }) => {
-                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() {
+                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() || ctx.beat.next_beat_idx != event.location{
                     return;
                 }
                 // if this cycle will run over the edge into next beat, we start playback
                 // slightly before start of audio clip, so it aligns on the downbeat
                 // sample.
-                self.active = true;
+                self.active = false;
                 self.current_sample = sample;
                 for (i, clip) in self.clips.iter().enumerate() {
                     if clip.read_index() == clip_idx as usize {
+                        self.active = true;
                         self.current_clip = i;
-                    } else {
-                        self.active = false;
-                    }
-                }
+                        break;
+                    }                 }
             }
             Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
                 if channel_idx != self.channel_idx {

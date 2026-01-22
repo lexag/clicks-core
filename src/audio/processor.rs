@@ -2,7 +2,7 @@ use common::{
     cue::{Cue, Show},
     event::EventCursor,
     local::{
-        config::{LogContext, LogKind},
+        config::{LogContext, LogItem, LogKind},
         status::{AudioSourceState, BeatState, CombinedStatus},
     },
     mem::typeflags::MessageType, protocol::{message::{LargeMessage, Message, SmallMessage}, request::ControlAction},
@@ -10,7 +10,7 @@ use common::{
 use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
 
 use crate::{
-    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, logger::{self, LogItem}, CrossbeamNetwork
+    audio::source::{AudioSourceContext, SourceConfig}, CrossbeamNetwork
 };
 
 pub struct AudioProcessor {
@@ -46,7 +46,9 @@ impl AudioProcessor {
         self.notify_push(MessageType::TransportData);
         self.notify_push(MessageType::BeatData);
         self.notify_push(MessageType::CueData);
+        self.notify_push(MessageType::SmallCueData);
         self.notify_push(MessageType::ShowData);
+        self.notify_push(MessageType::TimecodeData);
     }
 
     fn notify_push(&self, message_type: MessageType) {
@@ -54,7 +56,9 @@ impl AudioProcessor {
             MessageType::TransportData => Message::Small(SmallMessage::TransportData(self.status.transport)),
             MessageType::BeatData => Message::Small(SmallMessage::BeatData(self.status.beat_state())),
             MessageType::CueData => Message::Large(LargeMessage::CueData(self.status.cue.clone())),
+            MessageType::SmallCueData => Message::Small(SmallMessage::CueData(common::local::status::SmallCueState { cue_idx: self.status.cue.cue_idx, cue_metadata: self.status.cue.cue.metadata })),
             MessageType::ShowData => Message::Large(LargeMessage::ShowData(self.status.show.clone())),
+            MessageType::TimecodeData => Message::Small(SmallMessage::TimecodeData(self.status.time_state())),
             _ => {
                 return;
             }
@@ -68,6 +72,7 @@ impl AudioProcessor {
         self.cbnet.command(ControlAction::TransportStop);
         self.cbnet.command(ControlAction::TransportZero);
         self.notify_push(MessageType::CueData);
+        self.notify_push(MessageType::SmallCueData);
     }
 
     fn load_show(&mut self, show: Show) {
@@ -99,8 +104,8 @@ impl AudioProcessor {
 
             ControlAction::LoadCueByIndex(idx) => {
                 if idx < self.status.show.cues.len() as u8 {
-                    self.load_cue(self.status.show.cues[idx as usize].clone());
                     self.status.cue.cue_idx = idx as u16;
+                    self.load_cue(self.status.show.cues[idx as usize].clone());
                 }
             }
 
@@ -109,6 +114,10 @@ impl AudioProcessor {
             }
 
             ControlAction::ChangeJumpMode(jumpmode) => {
+                println!("{}, {}, {}", jumpmode, 
+
+                self.status.transport.vlt , jumpmode.vlt(self.status.transport.vlt)
+                    );
                 self.status.transport.vlt = jumpmode.vlt(self.status.transport.vlt);
                 self.notify_push(MessageType::TransportData);
             }
@@ -145,8 +154,6 @@ impl AudioProcessor {
             .beat_state()
             .requested_vlt_action
             .vlt(self.status.transport.vlt);
-
-        self.status.transport.ltc = self.status.time_state();
 
         let new_idx = self.status.beat_state().beat_idx;
         if let AudioSourceState::BeatStatus(state) = &mut self.status.sources[0] {
@@ -203,17 +210,17 @@ impl AudioProcessor {
         while cursor.at_or_before(beat_idx)
             && let Some(event) = cursor.get_next()
         {
-            if pre_event && let Some(desc) = event.event {
-                self.cbnet.notify(Message::Small(SmallMessage::EventOccured(desc)));
-            }
-
-            for source in &mut self.sources {
-                if pre_event {
-                    source.source_device.event_will_occur(&self.ctx, event);
-                } else {
-                    source.source_device.event_occured(&self.ctx, event);
+                if pre_event && let Some(desc) = event.event {
+                    self.cbnet.notify(Message::Small(SmallMessage::EventOccured(desc)));
                 }
-            }
+
+                for source in &mut self.sources {
+                    if pre_event  {
+                        source.source_device.event_will_occur(&self.ctx, event);
+                    } else {
+                        source.source_device.event_occured(&self.ctx, event);
+                    }
+                }
         }
     }
 }
@@ -269,7 +276,11 @@ impl ProcessHandler for AudioProcessor {
             };
         }
 
-        if self.status.transport.running || self.status_changed_flag {
+        if self.status.transport.running && self.status.time_state().running {
+            self.notify_push(MessageType::TimecodeData);
+        }
+
+        if self.status_changed_flag {
             self.notify_push(MessageType::TransportData);
             self.status_changed_flag = false;
         }

@@ -2,12 +2,12 @@ use crate::{
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
-    logger::{LogItem}, CrossbeamNetwork,
+    CrossbeamNetwork,
 };
 use common::{
     cue::Show,
     local::{
-        config::{AudioConfiguration, LogContext, LogKind},
+        config::{AudioConfiguration, LogContext, LogItem, LogKind},
         status::{AudioDevice, JACKStatus},
     },
     mem::str::StaticString,
