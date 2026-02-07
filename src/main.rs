@@ -201,6 +201,8 @@ fn main() {
                     ];
                     pbh.load_show(show.clone());
                     sources.extend(pbh.create_audio_sources());
+                    // TODO: ugly
+                    pbh.load_cue(show.cues[0].clone());
                     for (i, source) in sources.iter_mut().enumerate() {
                         source.set_gain(config.channels[i].gain);
                     }

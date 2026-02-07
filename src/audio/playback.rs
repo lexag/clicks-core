@@ -25,7 +25,12 @@ struct AudioClip {
 
 impl Debug for AudioClip {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "AudioClip: clip_idx: {}", self.clip_idx)
+        write!(
+            f,
+            "AudioClip {{ clip_idx: {}, length: {} }}",
+            self.clip_idx,
+            self.get_length()
+        )
     }
 }
 
@@ -80,6 +85,8 @@ impl PlaybackHandler {
         }
     }
 
+    // FIXME: if the same clip appears multiple times in the cue, it will be counted as separate
+    // occurences. Right/wrong?
     fn num_channel_clips_in_cue(&self, cue: &Cue, channel: usize) -> usize {
         if channel > self.num_channels {
             return 0;
@@ -173,24 +180,33 @@ impl PlaybackHandler {
         clips
     }
 
+    /// Takes a show, and creates audio clip slots for all channels,
+    /// where each channel gets the minimum number of audio clip slots
+    /// it will need, i.e. the maximum number of clips in a single cue.
+    ///
+    /// Then stores the clips in self.clips:
+    ///     [
+    ///         [ch1_slot1, ch1_slot2, ...]
+    ///         [ch2_slot1, ch2_slot2, ...],
+    ///         [ch3_slot1],
+    ///         []
+    ///     ]
     pub fn load_show(&mut self, show: Show) {
-        let max_clips: Vec<usize> = (0..self.num_channels)
-            .clone()
-            .map(|channel| {
-                show.cues
-                    .iter()
-                    .map(|cue| self.num_channel_clips_in_cue(cue, channel))
-                    .max()
-                    .unwrap_or(0)
-            })
-            .collect();
-
         self.clips.clear();
-        for (channel, mc_channel) in max_clips.iter().enumerate().take(self.num_channels) {
-            self.clips.push(Vec::new());
-            for i in 0..*mc_channel {
-                self.clips[channel].push(AudioClip::new(i));
+
+        for channel in 0..self.num_channels {
+            // Figure out the max num of clips used in a single cue
+            let mut max_clips = 0;
+            for cue in &show.cues {
+                max_clips = std::cmp::max(self.num_channel_clips_in_cue(cue, channel), max_clips);
             }
+
+            let mut clips = Vec::new();
+            for i in 0..max_clips {
+                clips.push(AudioClip::new(i));
+            }
+
+            self.clips.push(clips);
         }
     }
 
@@ -216,9 +232,9 @@ impl PlaybackHandler {
     pub fn load_cue(&self, cue: Cue) {
         for (channel_idx, clips) in self.clip_idxs_in_cue(&cue).iter_mut().enumerate() {
             clips.sort();
-            for (clip_idx, clip) in clips.iter().enumerate() {
+            for (slot_idx, clip) in clips.iter().enumerate() {
                 let buf = self.load_wav_buf(channel_idx, *clip);
-                self.clips[channel_idx][clip_idx].write(*clip as usize, buf);
+                self.clips[channel_idx][slot_idx].write(*clip as usize, buf);
             }
         }
     }
@@ -333,6 +349,10 @@ impl AudioSource for PlaybackDevice {
             return Ok(self.silence(ctx.frame_size));
         }
 
+        if self.channel_idx == 0 {
+            println!("{:?}", self);
+        }
+
         // If currently not playing or prerolling before playing, return silence
         if !self.active || self.current_sample < 0 {
             return Ok(self.silence(ctx.frame_size));
@@ -389,23 +409,21 @@ impl AudioSource for PlaybackDevice {
         })
     }
 
-    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         match event.event {
             Some(EventDescription::PlaybackEvent {
                 channel_idx,
                 clip_idx,
                 sample,
             }) => {
-                if channel_idx != self.channel_idx
-                    || !ctx.will_overrun_frame()
-                    || ctx.beat.next_beat_idx != event.location
-                {
+                if channel_idx != self.channel_idx {
                     return;
                 }
-                // if this cycle will run over the edge into next beat, we start playback
-                // slightly before start of audio clip, so it aligns on the downbeat
-                // sample.
+
                 self.active = false;
+                // TODO: offset current_sample by time since the event actually occured,
+                // which is 0 <= t < frame_size, since this runs at the start (?) of the
+                // first frame *after* the beat and thus event occurs
                 self.current_sample = sample;
                 for (i, clip) in self.clips.iter().enumerate() {
                     if clip.read_index() == clip_idx as usize {
@@ -414,6 +432,11 @@ impl AudioSource for PlaybackDevice {
                         break;
                     }
                 }
+
+                println!(
+                    "ch: {} active: {}, clip: {}",
+                    self.channel_idx, self.active, self.current_clip
+                )
             }
             Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
                 if channel_idx != self.channel_idx {
@@ -425,5 +448,5 @@ impl AudioSource for PlaybackDevice {
         }
     }
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
 }
