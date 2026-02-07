@@ -1,5 +1,6 @@
 use crate::{
-    audio::source::{AudioSource, AudioSourceContext, SourceConfig}, cbnet::CrossbeamNetwork
+    audio::source::{AudioSource, AudioSourceContext, SourceConfig},
+    cbnet::CrossbeamNetwork,
 };
 use arc_swap::ArcSwap;
 use common::{
@@ -66,7 +67,11 @@ pub struct PlaybackHandler {
 }
 
 impl PlaybackHandler {
-    pub fn new(cbnet: CrossbeamNetwork, show_path: PathBuf, num_channels: usize) -> PlaybackHandler {
+    pub fn new(
+        cbnet: CrossbeamNetwork,
+        show_path: PathBuf,
+        num_channels: usize,
+    ) -> PlaybackHandler {
         PlaybackHandler {
             show_path,
             clips: Vec::new(),
@@ -391,7 +396,10 @@ impl AudioSource for PlaybackDevice {
                 clip_idx,
                 sample,
             }) => {
-                if channel_idx != self.channel_idx || !ctx.will_overrun_frame() || ctx.beat.next_beat_idx != event.location{
+                if channel_idx != self.channel_idx
+                    || !ctx.will_overrun_frame()
+                    || ctx.beat.next_beat_idx != event.location
+                {
                     return;
                 }
                 // if this cycle will run over the edge into next beat, we start playback
@@ -404,7 +412,8 @@ impl AudioSource for PlaybackDevice {
                         self.active = true;
                         self.current_clip = i;
                         break;
-                    }                 }
+                    }
+                }
             }
             Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
                 if channel_idx != self.channel_idx {

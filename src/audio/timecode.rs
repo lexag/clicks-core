@@ -26,7 +26,10 @@ impl Default for TimecodeSource {
             external_clock: false,
             volume: 1.0,
             frame_buffer: [0.0f32; 8192],
-            state: TimecodeState { running: false, ltc: TimecodeInstant::new(25) }
+            state: TimecodeState {
+                running: false,
+                ltc: TimecodeInstant::new(25),
+            },
         }
     }
 }
@@ -35,7 +38,10 @@ impl TimecodeSource {
     pub fn new(frame_rate: u8) -> TimecodeSource {
         TimecodeSource {
             frame_rate,
-            state: TimecodeState { running: false, ltc: TimecodeInstant::new(frame_rate) },
+            state: TimecodeState {
+                running: false,
+                ltc: TimecodeInstant::new(frame_rate),
+            },
             ..Default::default()
         }
     }
@@ -141,7 +147,9 @@ impl TimecodeSource {
             while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event && event.location == i {
+                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event
+                    && event.location == i
+                {
                     time = new_time;
                 }
             }
@@ -176,9 +184,8 @@ impl audio::source::AudioSource for TimecodeSource {
             ControlAction::TransportSeekBeat(beat_idx) => {
                 if !ctx.transport.running {
                     self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
-                    self.state.ltc
-                        .sub_us(ctx.beat.us_to_next_beat as u64)
-                        }
+                    self.state.ltc.sub_us(ctx.beat.us_to_next_beat as u64)
+                }
             }
             _ => {}
         }
@@ -188,8 +195,9 @@ impl audio::source::AudioSource for TimecodeSource {
         let last_cycle_frame = self.state.ltc;
 
         if self.state.running {
-            self.state.ltc
-                .add_progress((ctx.frame_size * self.frame_rate as usize * 65536 / ctx.sample_rate) as u16);
+            self.state.ltc.add_progress(
+                (ctx.frame_size * self.frame_rate as usize * 65536 / ctx.sample_rate) as u16,
+            );
         }
 
         if !ctx.transport.running || !self.state.running {
@@ -204,10 +212,8 @@ impl audio::source::AudioSource for TimecodeSource {
             self.state.ltc.frame_progress as u64 * samples_per_frame as u64 / 65536;
 
         if last_cycle_frame != self.state.ltc {
-            self.frame_buffer.copy_within(
-                samples_per_frame..2 * samples_per_frame,
-                0,
-            );
+            self.frame_buffer
+                .copy_within(samples_per_frame..2 * samples_per_frame, 0);
 
             // write next frame into next frame buffer
             let next_frame_bits = self.generate_smpte_frame_bits(0x0);
@@ -218,8 +224,7 @@ impl audio::source::AudioSource for TimecodeSource {
                 .copy_from_slice(next_frame_buf);
         }
 
-        Ok(&self.frame_buffer
-            [subframe_sample as usize..subframe_sample as usize + ctx.frame_size])
+        Ok(&self.frame_buffer[subframe_sample as usize..subframe_sample as usize + ctx.frame_size])
     }
 
     fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
