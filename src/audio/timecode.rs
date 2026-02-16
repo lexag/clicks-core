@@ -15,6 +15,7 @@ pub struct TimecodeSource {
     volume: f32,
     frame_buffer: [f32; 8192],
     state: TimecodeState,
+    last_cycle_frame: TimecodeInstant,
 }
 
 impl Default for TimecodeSource {
@@ -30,6 +31,7 @@ impl Default for TimecodeSource {
                 running: false,
                 ltc: TimecodeInstant::new(25),
             },
+            last_cycle_frame: TimecodeInstant::new(25),
         }
     }
 }
@@ -157,6 +159,47 @@ impl TimecodeSource {
         }
         time
     }
+
+    pub fn advance_by_samples(&mut self, samples: usize, sample_rate: usize) {
+        self.state
+            .ltc
+            .add_progress((samples * self.frame_rate as usize * 65536 / sample_rate) as u16);
+    }
+
+    fn calculate_frame_overlap(&mut self, sample_rate: usize) -> u64 {
+        // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
+        let samples_per_frame: usize = sample_rate / self.frame_rate as usize;
+        let samples_per_bit: usize = samples_per_frame / 80;
+
+        let subframe_sample =
+            self.state.ltc.frame_progress as u64 * samples_per_frame as u64 / 65536;
+
+        if self.last_cycle_frame != self.state.ltc {
+            self.frame_buffer
+                .copy_within(samples_per_frame..2 * samples_per_frame, 0);
+
+            // write next frame into next frame buffer
+            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
+            let next_frame_buf = &self
+                .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
+                [0..samples_per_frame];
+            self.frame_buffer[samples_per_frame..2 * samples_per_frame]
+                .copy_from_slice(next_frame_buf);
+        }
+
+        subframe_sample
+    }
+
+    fn frame(&mut self, frame_size: usize, sample_rate: usize) -> &[f32] {
+        if self.state.running {
+            self.advance_by_samples(frame_size, sample_rate);
+        }
+
+        let subframe_sample = self.calculate_frame_overlap(sample_rate);
+
+        self.last_cycle_frame = self.state.ltc;
+        &self.frame_buffer[subframe_sample as usize..subframe_sample as usize + frame_size]
+    }
 }
 
 impl audio::source::AudioSource for TimecodeSource {
@@ -192,39 +235,11 @@ impl audio::source::AudioSource for TimecodeSource {
     }
 
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
-        let last_cycle_frame = self.state.ltc;
-
-        if self.state.running {
-            self.state.ltc.add_progress(
-                (ctx.frame_size * self.frame_rate as usize * 65536 / ctx.sample_rate) as u16,
-            );
-        }
-
         if !ctx.transport.running || !self.state.running {
             return Ok(self.silence(ctx.frame_size));
         }
 
-        // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-        let samples_per_frame: usize = ctx.sample_rate / self.frame_rate as usize;
-        let samples_per_bit: usize = samples_per_frame / 80;
-
-        let subframe_sample =
-            self.state.ltc.frame_progress as u64 * samples_per_frame as u64 / 65536;
-
-        if last_cycle_frame != self.state.ltc {
-            self.frame_buffer
-                .copy_within(samples_per_frame..2 * samples_per_frame, 0);
-
-            // write next frame into next frame buffer
-            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
-            let next_frame_buf = &self
-                .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
-                [0..samples_per_frame];
-            self.frame_buffer[samples_per_frame..2 * samples_per_frame]
-                .copy_from_slice(next_frame_buf);
-        }
-
-        Ok(&self.frame_buffer[subframe_sample as usize..subframe_sample as usize + ctx.frame_size])
+        Ok(self.frame(ctx.frame_size, ctx.sample_rate))
     }
 
     fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
