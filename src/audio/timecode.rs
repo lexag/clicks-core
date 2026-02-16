@@ -128,8 +128,11 @@ impl TimecodeSource {
                 if sample_idx == 0 || (sample_idx == samples_per_bit / 2 && frame_bit != 0) {
                     current_parity *= -1;
                 }
-                buf[sample_idx + bit_idx as usize * samples_per_bit] =
-                    (current_parity as f32) * self.volume;
+
+                let idx = sample_idx + bit_idx as usize * samples_per_bit;
+                buf[idx] = (current_parity as f32) * self.volume;
+                buf[idx.saturating_sub(1)] += (current_parity as f32) * self.volume;
+                buf[idx.saturating_sub(1)] /= 2.0;
             }
         }
         buf
@@ -185,6 +188,12 @@ impl TimecodeSource {
                 [0..samples_per_frame];
             self.frame_buffer[samples_per_frame..2 * samples_per_frame]
                 .copy_from_slice(next_frame_buf);
+
+            // interpolate last sample at the change point from current frame buffer to next frame
+            // buffer
+            self.frame_buffer[samples_per_frame - 1] = (self.frame_buffer[samples_per_frame]
+                + self.frame_buffer[samples_per_frame - 2])
+                / 2.0
         }
 
         subframe_sample
@@ -330,14 +339,14 @@ mod tests {
         let (min, avg, max) = rise_fall_time(&frame);
 
         assert!(
-            (40.0..65.0).contains(&min),
-            "Rise/fall time min is {}, should be >= 40",
-            min
-        );
-        assert!(
             (40.0..65.0).contains(&avg),
             "Rise/fall time avg is {}, should be 40 -- 65",
             avg
+        );
+        assert!(
+            (40.0..65.0).contains(&min),
+            "Rise/fall time min is {}, should be >= 40",
+            min
         );
         assert!(
             (40.0..65.0).contains(&max),
