@@ -262,3 +262,100 @@ impl audio::source::AudioSource for TimecodeSource {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    fn rise_fall_time(buf: &[f32]) -> (f32, f32, f32) {
+        let peak_amplitude = buf
+            .iter()
+            .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
+            .unwrap();
+        let max_fluctuate = peak_amplitude.abs() * 0.05;
+
+        let mut min_time = 10000000.0;
+        let mut max_time = 0.0;
+        let mut avg_sum = 0.0;
+        let mut avg_cnt = 0;
+        // Find left side of crossing
+        // i.e. left of point is flat (approx same),
+        // and right of point is not flat (not approx same)
+        //
+        for left in 1..buf.len() - 1 {
+            if f32::abs(buf[left] - buf[left - 1]) < max_fluctuate
+                && f32::abs(buf[left] - buf[left + 1]) > max_fluctuate
+            {
+                // find right side of crossing
+                // i.e. right of point is flat (approx same),
+                // and left of point is not flat (not approx same)
+                for right in left..left + 10 {
+                    if f32::abs(buf[right] - buf[right + 1]) < max_fluctuate
+                        && f32::abs(buf[right] - buf[right - 1]) > max_fluctuate
+                    {
+                        // FIXME: locked to 48kHz
+                        let crossing_time = 1000.0 * (right - left) as f32 / 48.0;
+                        min_time = f32::min(min_time, crossing_time);
+                        max_time = f32::max(max_time, crossing_time);
+                        avg_sum += crossing_time;
+                        avg_cnt += 1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        (min_time, avg_sum / avg_cnt as f32, max_time)
+    }
+
+    #[test]
+    fn smpte_ltc_spec() {
+        // EBU Time-And-Control Code FOR TELEVISION TAPE-RECORDINGS
+        // https://tech.ebu.ch/docs/tech/tech3097.pdf
+
+        use super::*;
+
+        let mut tc = TimecodeSource::new(25);
+        tc.state.running = true;
+
+        const FRAME_SIZE: usize = 256;
+        const NUM_FRAMES: usize = 1000;
+        let mut frame = [0_f32; FRAME_SIZE * NUM_FRAMES];
+        for i in 0..NUM_FRAMES {
+            let _ = &frame[i * FRAME_SIZE..(i + 1) * FRAME_SIZE]
+                .copy_from_slice(tc.frame(FRAME_SIZE, 48000));
+        }
+
+        // println!("{:?}", frame);
+
+        // rise and fall time between 40 and 65 us
+        let (min, avg, max) = rise_fall_time(&frame);
+
+        assert!(
+            (40.0..65.0).contains(&min),
+            "Rise/fall time min is {}, should be >= 40",
+            min
+        );
+        assert!(
+            (40.0..65.0).contains(&avg),
+            "Rise/fall time avg is {}, should be 40 -- 65",
+            avg
+        );
+        assert!(
+            (40.0..65.0).contains(&max),
+            "Rise/fall time max is {}, should be <= 65",
+            max
+        );
+    }
+
+    #[test]
+    fn advance() {
+        use super::*;
+
+        let mut tc = TimecodeSource::new(25);
+        assert_eq!(tc.state.ltc, TimecodeInstant::new(25));
+        tc.advance_by_samples(48000 / 50, 48000);
+        tc.advance_by_samples(48000 / 50, 48000);
+
+        assert_eq!(tc.state.ltc.s, 0);
+        assert_eq!(tc.state.ltc.f, 1);
+    }
+}
