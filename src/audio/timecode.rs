@@ -131,8 +131,10 @@ impl TimecodeSource {
 
                 let idx = sample_idx + bit_idx as usize * samples_per_bit;
                 buf[idx] = (current_parity as f32) * self.volume;
-                buf[idx.saturating_sub(1)] += (current_parity as f32) * self.volume;
-                buf[idx.saturating_sub(1)] /= 2.0;
+                for i in 1..3 {
+                    buf[idx.saturating_sub(i)] += (current_parity as f32) * self.volume / i as f32;
+                    buf[idx.saturating_sub(i)] /= 1.0 + 1.0 / i as f32;
+                }
             }
         }
         buf
@@ -189,11 +191,14 @@ impl TimecodeSource {
             self.frame_buffer[samples_per_frame..2 * samples_per_frame]
                 .copy_from_slice(next_frame_buf);
 
-            // interpolate last sample at the change point from current frame buffer to next frame
+            // interpolate 2 last samples at the change point from current frame buffer to next frame
             // buffer
-            self.frame_buffer[samples_per_frame - 1] = (self.frame_buffer[samples_per_frame]
-                + self.frame_buffer[samples_per_frame - 2])
-                / 2.0
+            self.frame_buffer[samples_per_frame - 2] = (self.frame_buffer[samples_per_frame] * 2.0
+                + self.frame_buffer[samples_per_frame - 3] * 3.0)
+                / 5.0;
+            self.frame_buffer[samples_per_frame - 1] = (self.frame_buffer[samples_per_frame] * 3.0
+                + self.frame_buffer[samples_per_frame - 2] * 2.0)
+                / 5.0;
         }
 
         subframe_sample
@@ -274,6 +279,9 @@ impl audio::source::AudioSource for TimecodeSource {
 
 #[cfg(test)]
 mod tests {
+    use crate::audio::timecode::TimecodeSource;
+    use std::f32;
+
     fn rise_fall_time(buf: &[f32]) -> (f32, f32, f32) {
         let peak_amplitude = buf
             .iter()
@@ -353,6 +361,42 @@ mod tests {
             "Rise/fall time max is {}, should be <= 65",
             max
         );
+
+        println!("Rise/fall time report:");
+        println!("min: {}, avg: {}, max: {}", min, avg, max);
+    }
+
+    #[test]
+    #[ignore = "this test produces a file output"]
+    fn export_ltc_as_wav() {
+        const NUM_SECS: usize = 10;
+        const SAMPLE_RATE: usize = 48000;
+        const FRAME_SIZE: usize = 256;
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: SAMPLE_RATE as u32,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+
+        let mut all_zeroes = true;
+
+        let mut writer = hound::WavWriter::create("target/debug/ltc.wav", spec).unwrap();
+        let mut tc = TimecodeSource::new(25);
+        tc.state.running = true;
+        for _ in (0..SAMPLE_RATE * NUM_SECS).step_by(FRAME_SIZE) {
+            for sample in tc.frame(FRAME_SIZE, SAMPLE_RATE) {
+                if sample.abs() > 0.001 {
+                    all_zeroes = false;
+                }
+                writer
+                    .write_sample((sample * 65536.0 / 4.0) as i16)
+                    .unwrap();
+            }
+        }
+        writer.finalize().unwrap();
+
+        assert!(!all_zeroes, "Export resulted in a silent file");
     }
 
     #[test]
