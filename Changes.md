@@ -1,3 +1,7 @@
+## 1.2.3 - 2026-02-19
+- Fix SMPTE LTC not in spec
+- Fix playback working on first cue after load
+
 ## 1.2.1 - 2026-01-21
 - Refactor log handling
 - Basic implementation of hardware controller
