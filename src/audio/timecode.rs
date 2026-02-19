@@ -25,7 +25,7 @@ impl Default for TimecodeSource {
             drop_frame: false,
             color_framing: false,
             external_clock: false,
-            volume: 1.0,
+            volume: 0.5,
             frame_buffer: [0.0f32; 8192],
             state: TimecodeState {
                 running: false,
@@ -131,13 +131,25 @@ impl TimecodeSource {
 
                 let idx = sample_idx + bit_idx as usize * samples_per_bit;
                 buf[idx] = (current_parity as f32) * self.volume;
-                for i in 1..3 {
-                    buf[idx.saturating_sub(i)] += (current_parity as f32) * self.volume / i as f32;
-                    buf[idx.saturating_sub(i)] /= 1.0 + 1.0 / i as f32;
-                }
             }
         }
-        buf
+
+        let mut lp_buffer = [0_f32; 2048];
+        self.low_pass(&buf, &mut lp_buffer);
+
+        lp_buffer
+    }
+
+    fn low_pass(&self, buf: &[f32], out: &mut [f32]) {
+        const LP_WIDTH: usize = 2;
+        for idx in LP_WIDTH..buf.len() - LP_WIDTH {
+            let mut cumsum = 0.0;
+            for offs_idx in idx - LP_WIDTH..idx + LP_WIDTH {
+                cumsum += buf[offs_idx] * (LP_WIDTH - (idx.abs_diff(offs_idx))) as f32;
+            }
+            cumsum /= LP_WIDTH as f32 * (LP_WIDTH as f32 + 1.0) / 2.0;
+            out[idx] = cumsum;
+        }
     }
 
     fn calculate_time_at_beat(&self, ctx: &AudioSourceContext, beat_idx: u16) -> TimecodeInstant {
@@ -191,14 +203,14 @@ impl TimecodeSource {
             self.frame_buffer[samples_per_frame..2 * samples_per_frame]
                 .copy_from_slice(next_frame_buf);
 
-            // interpolate 2 last samples at the change point from current frame buffer to next frame
-            // buffer
-            self.frame_buffer[samples_per_frame - 2] = (self.frame_buffer[samples_per_frame] * 2.0
-                + self.frame_buffer[samples_per_frame - 3] * 3.0)
-                / 5.0;
-            self.frame_buffer[samples_per_frame - 1] = (self.frame_buffer[samples_per_frame] * 3.0
-                + self.frame_buffer[samples_per_frame - 2] * 2.0)
-                / 5.0;
+            //// interpolate 2 last samples at the change point from current frame buffer to next frame
+            //// buffer
+            //self.frame_buffer[samples_per_frame - 2] = (self.frame_buffer[samples_per_frame] * 2.0
+            //    + self.frame_buffer[samples_per_frame - 3] * 3.0)
+            //    / 5.0;
+            //self.frame_buffer[samples_per_frame - 1] = (self.frame_buffer[samples_per_frame] * 3.0
+            //    + self.frame_buffer[samples_per_frame - 2] * 2.0)
+            //    / 5.0;
         }
 
         subframe_sample
@@ -346,6 +358,9 @@ mod tests {
         // rise and fall time between 40 and 65 us
         let (min, avg, max) = rise_fall_time(&frame);
 
+        println!("Rise/fall time report:");
+        println!("min: {}, avg: {}, max: {}", min, avg, max);
+
         assert!(
             (40.0..65.0).contains(&avg),
             "Rise/fall time avg is {}, should be 40 -- 65",
@@ -361,15 +376,12 @@ mod tests {
             "Rise/fall time max is {}, should be <= 65",
             max
         );
-
-        println!("Rise/fall time report:");
-        println!("min: {}, avg: {}, max: {}", min, avg, max);
     }
 
     #[test]
     #[ignore = "this test produces a file output"]
     fn export_ltc_as_wav() {
-        const NUM_SECS: usize = 10;
+        const NUM_SECS: usize = 100;
         const SAMPLE_RATE: usize = 48000;
         const FRAME_SIZE: usize = 256;
         let spec = hound::WavSpec {
