@@ -5,12 +5,17 @@ use common::{
         config::{LogContext, LogItem, LogKind},
         status::{AudioSourceState, BeatState, CombinedStatus},
     },
-    mem::typeflags::MessageType, protocol::{message::{LargeMessage, Message, SmallMessage}, request::ControlAction},
+    mem::typeflags::MessageType,
+    protocol::{
+        message::{LargeMessage, Message, SmallMessage},
+        request::ControlAction,
+    },
 };
 use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
 
 use crate::{
-    audio::source::{AudioSourceContext, SourceConfig}, CrossbeamNetwork
+    CrossbeamNetwork,
+    audio::source::{AudioSourceContext, SourceConfig},
 };
 
 pub struct AudioProcessor {
@@ -53,12 +58,25 @@ impl AudioProcessor {
 
     fn notify_push(&self, message_type: MessageType) {
         self.cbnet.notify(match message_type {
-            MessageType::TransportData => Message::Small(SmallMessage::TransportData(self.status.transport)),
-            MessageType::BeatData => Message::Small(SmallMessage::BeatData(self.status.beat_state())),
+            MessageType::TransportData => {
+                Message::Small(SmallMessage::TransportData(self.status.transport))
+            }
+            MessageType::BeatData => {
+                Message::Small(SmallMessage::BeatData(self.status.beat_state()))
+            }
             MessageType::CueData => Message::Large(LargeMessage::CueData(self.status.cue.clone())),
-            MessageType::SmallCueData => Message::Small(SmallMessage::CueData(common::local::status::SmallCueState { cue_idx: self.status.cue.cue_idx, cue_metadata: self.status.cue.cue.metadata })),
-            MessageType::ShowData => Message::Large(LargeMessage::ShowData(self.status.show.clone())),
-            MessageType::TimecodeData => Message::Small(SmallMessage::TimecodeData(self.status.time_state())),
+            MessageType::SmallCueData => Message::Small(SmallMessage::CueData(
+                common::local::status::SmallCueState {
+                    cue_idx: self.status.cue.cue_idx,
+                    cue_metadata: self.status.cue.cue.metadata,
+                },
+            )),
+            MessageType::ShowData => {
+                Message::Large(LargeMessage::ShowData(self.status.show.clone()))
+            }
+            MessageType::TimecodeData => {
+                Message::Small(SmallMessage::TimecodeData(self.status.time_state()))
+            }
             _ => {
                 return;
             }
@@ -114,10 +132,12 @@ impl AudioProcessor {
             }
 
             ControlAction::ChangeJumpMode(jumpmode) => {
-                println!("{}, {}, {}", jumpmode, 
-
-                self.status.transport.vlt , jumpmode.vlt(self.status.transport.vlt)
-                    );
+                println!(
+                    "{}, {}, {}",
+                    jumpmode,
+                    self.status.transport.vlt,
+                    jumpmode.vlt(self.status.transport.vlt)
+                );
                 self.status.transport.vlt = jumpmode.vlt(self.status.transport.vlt);
                 self.notify_push(MessageType::TransportData);
             }
@@ -210,17 +230,18 @@ impl AudioProcessor {
         while cursor.at_or_before(beat_idx)
             && let Some(event) = cursor.get_next()
         {
-                if pre_event && let Some(desc) = event.event {
-                    self.cbnet.notify(Message::Small(SmallMessage::EventOccured(desc)));
-                }
+            if pre_event && let Some(desc) = event.event {
+                self.cbnet
+                    .notify(Message::Small(SmallMessage::EventOccured(desc)));
+            }
 
-                for source in &mut self.sources {
-                    if pre_event  {
-                        source.source_device.event_will_occur(&self.ctx, event);
-                    } else {
-                        source.source_device.event_occured(&self.ctx, event);
-                    }
+            for source in &mut self.sources {
+                if pre_event {
+                    source.source_device.event_will_occur(&self.ctx, event);
+                } else {
+                    source.source_device.event_occured(&self.ctx, event);
                 }
+            }
         }
     }
 }

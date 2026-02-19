@@ -273,20 +273,26 @@ impl OscNetHandler {
 
         let mut cmds = vec![];
         for chidx in 0..32 {
-            if self.addreq(format!("/{chidx}/gain")) && let Some(gain) = self.get_arg(0).float() {
-                    cmds.push(Request::ControlAction(ControlAction::SetChannelGain(
-                        chidx, gain,
-                    )));
+            if self.addreq(format!("/{chidx}/gain"))
+                && let Some(gain) = self.get_arg(0).float()
+            {
+                cmds.push(Request::ControlAction(ControlAction::SetChannelGain(
+                    chidx, gain,
+                )));
             }
-            if self.addreq(format!("/{chidx}/mute")) && let Some(mute) = self.get_arg(0).bool() {
-                    cmds.push(Request::ControlAction(ControlAction::SetChannelMute(
-                        chidx, mute,
-                    )));
+            if self.addreq(format!("/{chidx}/mute"))
+                && let Some(mute) = self.get_arg(0).bool()
+            {
+                cmds.push(Request::ControlAction(ControlAction::SetChannelMute(
+                    chidx, mute,
+                )));
             }
             for out_idx in 0..64 {
-                if self.addreq(format!("/{chidx}/route/{out_idx}")) && let Some(patch) = self.get_arg(0).bool() {
-                        cmds.push(Request::ChangeRouting(chidx, out_idx, patch));
-                    }
+                if self.addreq(format!("/{chidx}/route/{out_idx}"))
+                    && let Some(patch) = self.get_arg(0).bool()
+                {
+                    cmds.push(Request::ChangeRouting(chidx, out_idx, patch));
+                }
             }
         }
         Ok(cmds)

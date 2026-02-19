@@ -2,7 +2,7 @@ use common::{
     local::config::LogItem,
     protocol::{message::Message, request::ControlAction},
 };
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 
 #[derive(Debug, Clone)]
 pub struct CrossbeamNetwork {

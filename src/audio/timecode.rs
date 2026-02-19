@@ -15,6 +15,7 @@ pub struct TimecodeSource {
     volume: f32,
     frame_buffer: [f32; 8192],
     state: TimecodeState,
+    last_cycle_frame: TimecodeInstant,
 }
 
 impl Default for TimecodeSource {
@@ -24,9 +25,13 @@ impl Default for TimecodeSource {
             drop_frame: false,
             color_framing: false,
             external_clock: false,
-            volume: 1.0,
+            volume: 0.5,
             frame_buffer: [0.0f32; 8192],
-            state: TimecodeState { running: false, ltc: TimecodeInstant::new(25) }
+            state: TimecodeState {
+                running: false,
+                ltc: TimecodeInstant::new(25),
+            },
+            last_cycle_frame: TimecodeInstant::new(25),
         }
     }
 }
@@ -35,7 +40,10 @@ impl TimecodeSource {
     pub fn new(frame_rate: u8) -> TimecodeSource {
         TimecodeSource {
             frame_rate,
-            state: TimecodeState { running: false, ltc: TimecodeInstant::new(frame_rate) },
+            state: TimecodeState {
+                running: false,
+                ltc: TimecodeInstant::new(frame_rate),
+            },
             ..Default::default()
         }
     }
@@ -120,11 +128,28 @@ impl TimecodeSource {
                 if sample_idx == 0 || (sample_idx == samples_per_bit / 2 && frame_bit != 0) {
                     current_parity *= -1;
                 }
-                buf[sample_idx + bit_idx as usize * samples_per_bit] =
-                    (current_parity as f32) * self.volume;
+
+                let idx = sample_idx + bit_idx as usize * samples_per_bit;
+                buf[idx] = (current_parity as f32) * self.volume;
             }
         }
-        buf
+
+        let mut lp_buffer = [0_f32; 2048];
+        self.low_pass(&buf, &mut lp_buffer);
+
+        lp_buffer
+    }
+
+    fn low_pass(&self, buf: &[f32], out: &mut [f32]) {
+        const LP_WIDTH: usize = 2;
+        for idx in LP_WIDTH..buf.len() - LP_WIDTH {
+            let mut cumsum = 0.0;
+            for offs_idx in idx - LP_WIDTH..idx + LP_WIDTH {
+                cumsum += buf[offs_idx] * (LP_WIDTH - (idx.abs_diff(offs_idx))) as f32;
+            }
+            cumsum /= LP_WIDTH as f32 * (LP_WIDTH as f32 + 1.0) / 2.0;
+            out[idx] = cumsum;
+        }
     }
 
     fn calculate_time_at_beat(&self, ctx: &AudioSourceContext, beat_idx: u16) -> TimecodeInstant {
@@ -141,13 +166,65 @@ impl TimecodeSource {
             while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event && event.location == i {
+                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event
+                    && event.location == i
+                {
                     time = new_time;
                 }
             }
             time.add_us(ctx.cue.get_beat(i).unwrap_or_default().length as u64);
         }
         time
+    }
+
+    pub fn advance_by_samples(&mut self, samples: usize, sample_rate: usize) {
+        self.state
+            .ltc
+            .add_progress((samples * self.frame_rate as usize * 65536 / sample_rate) as u16);
+    }
+
+    fn calculate_frame_overlap(&mut self, sample_rate: usize) -> u64 {
+        // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
+        let samples_per_frame: usize = sample_rate / self.frame_rate as usize;
+        let samples_per_bit: usize = samples_per_frame / 80;
+
+        let subframe_sample =
+            self.state.ltc.frame_progress as u64 * samples_per_frame as u64 / 65536;
+
+        if self.last_cycle_frame != self.state.ltc {
+            self.frame_buffer
+                .copy_within(samples_per_frame..2 * samples_per_frame, 0);
+
+            // write next frame into next frame buffer
+            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
+            let next_frame_buf = &self
+                .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
+                [0..samples_per_frame];
+            self.frame_buffer[samples_per_frame..2 * samples_per_frame]
+                .copy_from_slice(next_frame_buf);
+
+            //// interpolate 2 last samples at the change point from current frame buffer to next frame
+            //// buffer
+            //self.frame_buffer[samples_per_frame - 2] = (self.frame_buffer[samples_per_frame] * 2.0
+            //    + self.frame_buffer[samples_per_frame - 3] * 3.0)
+            //    / 5.0;
+            //self.frame_buffer[samples_per_frame - 1] = (self.frame_buffer[samples_per_frame] * 3.0
+            //    + self.frame_buffer[samples_per_frame - 2] * 2.0)
+            //    / 5.0;
+        }
+
+        subframe_sample
+    }
+
+    fn frame(&mut self, frame_size: usize, sample_rate: usize) -> &[f32] {
+        if self.state.running {
+            self.advance_by_samples(frame_size, sample_rate);
+        }
+
+        let subframe_sample = self.calculate_frame_overlap(sample_rate);
+
+        self.last_cycle_frame = self.state.ltc;
+        &self.frame_buffer[subframe_sample as usize..subframe_sample as usize + frame_size]
     }
 }
 
@@ -176,50 +253,19 @@ impl audio::source::AudioSource for TimecodeSource {
             ControlAction::TransportSeekBeat(beat_idx) => {
                 if !ctx.transport.running {
                     self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
-                    self.state.ltc
-                        .sub_us(ctx.beat.us_to_next_beat as u64)
-                        }
+                    self.state.ltc.sub_us(ctx.beat.us_to_next_beat as u64)
+                }
             }
             _ => {}
         }
     }
 
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
-        let last_cycle_frame = self.state.ltc;
-
-        if self.state.running {
-            self.state.ltc
-                .add_progress((ctx.frame_size * self.frame_rate as usize * 65536 / ctx.sample_rate) as u16);
-        }
-
         if !ctx.transport.running || !self.state.running {
             return Ok(self.silence(ctx.frame_size));
         }
 
-        // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-        let samples_per_frame: usize = ctx.sample_rate / self.frame_rate as usize;
-        let samples_per_bit: usize = samples_per_frame / 80;
-
-        let subframe_sample =
-            self.state.ltc.frame_progress as u64 * samples_per_frame as u64 / 65536;
-
-        if last_cycle_frame != self.state.ltc {
-            self.frame_buffer.copy_within(
-                samples_per_frame..2 * samples_per_frame,
-                0,
-            );
-
-            // write next frame into next frame buffer
-            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
-            let next_frame_buf = &self
-                .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
-                [0..samples_per_frame];
-            self.frame_buffer[samples_per_frame..2 * samples_per_frame]
-                .copy_from_slice(next_frame_buf);
-        }
-
-        Ok(&self.frame_buffer
-            [subframe_sample as usize..subframe_sample as usize + ctx.frame_size])
+        Ok(self.frame(ctx.frame_size, ctx.sample_rate))
     }
 
     fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
@@ -240,5 +286,141 @@ impl audio::source::AudioSource for TimecodeSource {
             // clicks-common. When a timecode event is set above 24 hours, it will stop
             self.state.running = time.h <= 24;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::audio::timecode::TimecodeSource;
+    use std::f32;
+
+    fn rise_fall_time(buf: &[f32]) -> (f32, f32, f32) {
+        let peak_amplitude = buf
+            .iter()
+            .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
+            .unwrap();
+        let max_fluctuate = peak_amplitude.abs() * 0.05;
+
+        let mut min_time = 10000000.0;
+        let mut max_time = 0.0;
+        let mut avg_sum = 0.0;
+        let mut avg_cnt = 0;
+        // Find left side of crossing
+        // i.e. left of point is flat (approx same),
+        // and right of point is not flat (not approx same)
+        //
+        for left in 1..buf.len() - 1 {
+            if f32::abs(buf[left] - buf[left - 1]) < max_fluctuate
+                && f32::abs(buf[left] - buf[left + 1]) > max_fluctuate
+            {
+                // find right side of crossing
+                // i.e. right of point is flat (approx same),
+                // and left of point is not flat (not approx same)
+                for right in left..left + 10 {
+                    if f32::abs(buf[right] - buf[right + 1]) < max_fluctuate
+                        && f32::abs(buf[right] - buf[right - 1]) > max_fluctuate
+                    {
+                        // FIXME: locked to 48kHz
+                        let crossing_time = 1000.0 * (right - left) as f32 / 48.0;
+                        min_time = f32::min(min_time, crossing_time);
+                        max_time = f32::max(max_time, crossing_time);
+                        avg_sum += crossing_time;
+                        avg_cnt += 1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        (min_time, avg_sum / avg_cnt as f32, max_time)
+    }
+
+    #[test]
+    fn smpte_ltc_spec() {
+        // EBU Time-And-Control Code FOR TELEVISION TAPE-RECORDINGS
+        // https://tech.ebu.ch/docs/tech/tech3097.pdf
+
+        use super::*;
+
+        let mut tc = TimecodeSource::new(25);
+        tc.state.running = true;
+
+        const FRAME_SIZE: usize = 256;
+        const NUM_FRAMES: usize = 1000;
+        let mut frame = [0_f32; FRAME_SIZE * NUM_FRAMES];
+        for i in 0..NUM_FRAMES {
+            let _ = &frame[i * FRAME_SIZE..(i + 1) * FRAME_SIZE]
+                .copy_from_slice(tc.frame(FRAME_SIZE, 48000));
+        }
+
+        // println!("{:?}", frame);
+
+        // rise and fall time between 40 and 65 us
+        let (min, avg, max) = rise_fall_time(&frame);
+
+        println!("Rise/fall time report:");
+        println!("min: {}, avg: {}, max: {}", min, avg, max);
+
+        assert!(
+            (40.0..65.0).contains(&avg),
+            "Rise/fall time avg is {}, should be 40 -- 65",
+            avg
+        );
+        assert!(
+            (40.0..65.0).contains(&min),
+            "Rise/fall time min is {}, should be >= 40",
+            min
+        );
+        assert!(
+            (40.0..65.0).contains(&max),
+            "Rise/fall time max is {}, should be <= 65",
+            max
+        );
+    }
+
+    #[test]
+    #[ignore = "this test produces a file output"]
+    fn export_ltc_as_wav() {
+        const NUM_SECS: usize = 100;
+        const SAMPLE_RATE: usize = 48000;
+        const FRAME_SIZE: usize = 256;
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: SAMPLE_RATE as u32,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+
+        let mut all_zeroes = true;
+
+        let mut writer = hound::WavWriter::create("target/debug/ltc.wav", spec).unwrap();
+        let mut tc = TimecodeSource::new(25);
+        tc.state.running = true;
+        for _ in (0..SAMPLE_RATE * NUM_SECS).step_by(FRAME_SIZE) {
+            for sample in tc.frame(FRAME_SIZE, SAMPLE_RATE) {
+                if sample.abs() > 0.001 {
+                    all_zeroes = false;
+                }
+                writer
+                    .write_sample((sample * 65536.0 / 4.0) as i16)
+                    .unwrap();
+            }
+        }
+        writer.finalize().unwrap();
+
+        assert!(!all_zeroes, "Export resulted in a silent file");
+    }
+
+    #[test]
+    fn advance() {
+        use super::*;
+
+        let mut tc = TimecodeSource::new(25);
+        assert_eq!(tc.state.ltc, TimecodeInstant::new(25));
+        tc.advance_by_samples(48000 / 50, 48000);
+        tc.advance_by_samples(48000 / 50, 48000);
+
+        assert_eq!(tc.state.ltc.s, 0);
+        assert_eq!(tc.state.ltc.f, 1);
     }
 }

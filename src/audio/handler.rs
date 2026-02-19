@@ -1,8 +1,8 @@
 use crate::{
+    CrossbeamNetwork,
     audio::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
-    CrossbeamNetwork,
 };
 use common::{
     cue::Show,
@@ -297,9 +297,11 @@ impl AudioHandler {
         let mut devices = Vec::new();
 
         for line in stdout.lines() {
-            if line.trim_start().starts_with("card") && let Some(device) = AudioDevice::from_aplay_str(line) {
-                    devices.push(device);
-                }
+            if line.trim_start().starts_with("card")
+                && let Some(device) = AudioDevice::from_aplay_str(line)
+            {
+                devices.push(device);
+            }
         }
 
         devices

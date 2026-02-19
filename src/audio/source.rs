@@ -9,6 +9,7 @@ use std::ops::Div;
 
 use crate::cbnet::CrossbeamNetwork;
 
+#[derive(Debug)]
 pub struct AudioSourceContext {
     pub jack_time: u64,
     pub frame_size: usize,

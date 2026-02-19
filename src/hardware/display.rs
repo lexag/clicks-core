@@ -1,18 +1,18 @@
 use ssd1306::{
+    Ssd1306,
     mode::{DisplayConfig, TerminalMode},
     prelude::I2CInterface,
-    Ssd1306,
 };
 
 use crate::VERSION;
-use common::{cue::Show, VERSION as COMMON_VERSION};
+use common::{VERSION as COMMON_VERSION, cue::Show};
 use linux_embedded_hal::I2cdev;
 use local_ip_address::local_ip;
 use ssd1306::size::DisplaySize128x64;
 use std::{net::IpAddr, str::FromStr, time::Duration};
 
-fn get_display(
-) -> Result<Ssd1306<I2CInterface<I2cdev>, DisplaySize128x64, TerminalMode>, std::io::Error> {
+fn get_display()
+-> Result<Ssd1306<I2CInterface<I2cdev>, DisplaySize128x64, TerminalMode>, std::io::Error> {
     let i2cdev = I2cdev::new("/dev/i2c-1")?;
 
     let interface = ssd1306::I2CDisplayInterface::new(i2cdev);
