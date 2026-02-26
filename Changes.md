@@ -1,3 +1,6 @@
+## 1.2.4 - 2026-02-26
+- SMPTE LTC now goes 0-24 instead of 1-25. Customizability of this and other settings are planned for version 1.3, see [common#31](https://github.com/lexag/clicks-common/issues/31)
+
 ## 1.2.3 - 2026-02-19
 - Fix SMPTE LTC not in spec
 - Fix playback working on first cue after load
