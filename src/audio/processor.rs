@@ -1,9 +1,9 @@
 use common::{
     cue::{Cue, Show},
-    event::{Event, EventCursor, EventDescription},
+    event::Event,
     local::{
         config::{LogContext, LogItem, LogKind},
-        status::{AudioSourceState, BeatState, CombinedStatus},
+        status::{AudioSourceState, CombinedStatus},
     },
     mem::typeflags::MessageType,
     protocol::{
@@ -228,12 +228,7 @@ impl AudioProcessor {
     }
 
     fn send_beat_events_to_children(&mut self, beat_idx: u16) {
-        let events = self.status.cue.cue.events.clone();
-        let mut cursor = EventCursor::new(&events);
-        cursor.seek(beat_idx);
-        while cursor.at_or_before(beat_idx)
-            && let Some(event) = cursor.get_next()
-        {
+        for event in self.status.cue.cue.events.get_at_location(beat_idx) {
             self.invoke_event(event);
         }
     }
@@ -286,11 +281,6 @@ impl ProcessHandler for AudioProcessor {
             self.cbnet.command(ControlAction::TransportStop);
             self.cbnet.command(ControlAction::LoadNextCue);
             self.cbnet.command(ControlAction::TransportZero);
-        }
-
-        // Warn of upcoming events
-        if self.ctx.will_overrun_frame() && self.status.transport.running {
-            self.send_beat_events_to_children(self.status.beat_state().next_beat_idx);
         }
 
         self.update_context(c, ps);
