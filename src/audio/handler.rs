@@ -200,7 +200,7 @@ impl AudioHandler {
             };
             self.jack_status.io_size = (self.get_ports().0.len(), self.get_ports().1.len());
             self.jack_status.buffer_size = client.buffer_size() as usize;
-            self.jack_status.sample_rate = client.sample_rate();
+            self.jack_status.sample_rate = client.sample_rate() as usize;
             self.jack_status.frame_size = 0;
             self.jack_status.client_name = StaticString::new(client.name());
             self.jack_status.output_name = self.config.server.system_name;

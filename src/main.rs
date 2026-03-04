@@ -196,7 +196,7 @@ fn main() {
                         ),
                         audio::source::SourceConfig::new(
                             "timecode".to_string(),
-                            Box::new(TimecodeSource::new(25)),
+                            Box::new(TimecodeSource::new()),
                         ),
                     ];
                     pbh.load_show(show.clone());
@@ -218,6 +218,7 @@ fn main() {
                     config.update(conf);
                     nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
                 }
+
                 _ => {}
             };
         }

@@ -1,9 +1,9 @@
 use common::{
     cue::{Cue, Show},
-    event::EventCursor,
+    event::Event,
     local::{
         config::{LogContext, LogItem, LogKind},
-        status::{AudioSourceState, BeatState, CombinedStatus},
+        status::{AudioSourceState, CombinedStatus},
     },
     mem::typeflags::MessageType,
     protocol::{
@@ -145,6 +145,9 @@ impl AudioProcessor {
                 self.status.transport.playrate_percent = playrate;
                 self.notify_push(MessageType::TransportData);
             }
+            ControlAction::RunEvent(event) => {
+                self.invoke_event(Event::new(u16::MAX, event));
+            }
 
             _ => {}
         }
@@ -182,7 +185,7 @@ impl AudioProcessor {
 
         if new_idx != current_beat {
             self.notify_push(MessageType::BeatData);
-            self.send_beat_events_to_children(self.status.beat_state().beat_idx, false);
+            self.send_beat_events_to_children(self.status.beat_state().beat_idx);
         }
     }
 
@@ -216,7 +219,7 @@ impl AudioProcessor {
         self.ctx = AudioSourceContext {
             jack_time: c.time(),
             frame_size: ps.n_frames() as usize,
-            sample_rate: c.sample_rate(),
+            sample_rate: c.sample_rate() as usize,
             beat: self.status.beat_state(),
             transport: self.status.transport,
             cbnet: self.cbnet.clone(),
@@ -224,24 +227,20 @@ impl AudioProcessor {
         }
     }
 
-    fn send_beat_events_to_children(&mut self, beat_idx: u16, pre_event: bool) {
-        let mut cursor = EventCursor::new(&self.status.cue.cue.events);
-        cursor.seek(beat_idx);
-        while cursor.at_or_before(beat_idx)
-            && let Some(event) = cursor.get_next()
-        {
-            if pre_event && let Some(desc) = event.event {
-                self.cbnet
-                    .notify(Message::Small(SmallMessage::EventOccured(desc)));
-            }
+    fn send_beat_events_to_children(&mut self, beat_idx: u16) {
+        for event in self.status.cue.cue.events.get_at_location(beat_idx) {
+            self.invoke_event(event);
+        }
+    }
 
-            for source in &mut self.sources {
-                if pre_event {
-                    source.source_device.event_will_occur(&self.ctx, event);
-                } else {
-                    source.source_device.event_occured(&self.ctx, event);
-                }
-            }
+    fn invoke_event(&mut self, event: Event) {
+        if let Some(desc) = event.event {
+            self.cbnet
+                .notify(Message::Small(SmallMessage::EventOccured(desc)));
+        }
+
+        for source in &mut self.sources {
+            source.source_device.event_occured(&self.ctx, event);
         }
     }
 }
@@ -282,11 +281,6 @@ impl ProcessHandler for AudioProcessor {
             self.cbnet.command(ControlAction::TransportStop);
             self.cbnet.command(ControlAction::LoadNextCue);
             self.cbnet.command(ControlAction::TransportZero);
-        }
-
-        // Warn of upcoming events
-        if self.ctx.will_overrun_frame() && self.status.transport.running {
-            self.send_beat_events_to_children(self.status.beat_state().next_beat_idx, true);
         }
 
         self.update_context(c, ps);

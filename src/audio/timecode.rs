@@ -3,15 +3,12 @@ use crate::audio::{self, source::AudioSourceContext};
 use common::{
     event::{EventCursor, EventDescription},
     local::status::{AudioSourceState, TimecodeState},
-    mem::smpte::TimecodeInstant,
+    mem::smpte::{TimecodeInstant, TimecodeProperties},
     protocol::request::ControlAction,
 };
 
 pub struct TimecodeSource {
-    pub frame_rate: u8,
-    pub drop_frame: bool,
-    pub color_framing: bool,
-    pub external_clock: bool,
+    pub properties: TimecodeProperties,
     volume: f32,
     frame_buffer: [f32; 8192],
     state: TimecodeState,
@@ -21,10 +18,7 @@ pub struct TimecodeSource {
 impl Default for TimecodeSource {
     fn default() -> Self {
         Self {
-            frame_rate: 25,
-            drop_frame: false,
-            color_framing: false,
-            external_clock: false,
+            properties: TimecodeProperties::default(),
             volume: 0.5,
             frame_buffer: [0.0f32; 8192],
             state: TimecodeState {
@@ -37,15 +31,18 @@ impl Default for TimecodeSource {
 }
 
 impl TimecodeSource {
-    pub fn new(frame_rate: u8) -> TimecodeSource {
+    pub fn new() -> TimecodeSource {
         TimecodeSource {
-            frame_rate,
             state: TimecodeState {
                 running: false,
-                ltc: TimecodeInstant::new(frame_rate),
+                ltc: TimecodeInstant::new(25),
             },
             ..Default::default()
         }
+    }
+
+    fn frame_rate(&self) -> u8 {
+        self.state.ltc.frame_rate
     }
 
     fn even_parity_bit(&self, mut data: u128) -> u128 {
@@ -58,7 +55,7 @@ impl TimecodeSource {
         parity
     }
 
-    fn generate_smpte_frame_bits(&self, user_bits: u32) -> u128 {
+    fn generate_smpte_frame_bits(&self) -> u128 {
         let h0: u128 = (self.state.ltc.h.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
@@ -77,13 +74,12 @@ impl TimecodeSource {
         let s1: u128 = (self.state.ltc.s.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f0: u128 = ((self.state.ltc.f.abs()) % 10)
+        let f0: u128 = ((self.state.ltc.f.abs() + self.properties.frame_offset as i8) % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f1: u128 = ((self.state.ltc.f.abs()) / 10)
+        let f1: u128 = ((self.state.ltc.f.abs() + self.properties.frame_offset as i8) / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let user_bits: u32 = 0;
 
         let mut t_enc: u128 = 0;
 
@@ -98,11 +94,12 @@ impl TimecodeSource {
         t_enc |= h1 << 56;
 
         // flags
-        t_enc |= (self.drop_frame as u128) << 10;
-        t_enc |= (self.color_framing as u128) << 11;
-        t_enc |= (self.external_clock as u128) << 58;
+        t_enc |= (self.properties.drop_frame as u128) << 10;
+        t_enc |= (self.properties.color_framing as u128) << 11;
+        t_enc |= (self.properties.use_wall_time as u128) << 58;
 
         // user bits
+        let user_bits = u32::from_ne_bytes(self.properties.user_bits);
         for i in 0..8 {
             t_enc |= ((user_bits & (0b1111 << i)) as u128) << (4 * i + 4);
         }
@@ -111,7 +108,7 @@ impl TimecodeSource {
         t_enc |= 0b1011111111111100 << 64;
 
         let polarity_correction_bit: u128 = self.even_parity_bit(t_enc);
-        if self.frame_rate == 25 {
+        if self.frame_rate() == 25 {
             t_enc |= polarity_correction_bit << 59;
         } else {
             t_enc |= polarity_correction_bit << 27;
@@ -159,14 +156,17 @@ impl TimecodeSource {
             s: 0,
             f: 0,
             frame_progress: 0,
-            frame_rate: self.frame_rate,
+            frame_rate: self.frame_rate(),
         };
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
             while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event
+                if let Some(EventDescription::TimecodeEvent {
+                    time: new_time,
+                    properties,
+                }) = event.event
                     && event.location == i
                 {
                     time = new_time;
@@ -180,12 +180,12 @@ impl TimecodeSource {
     pub fn advance_by_samples(&mut self, samples: usize, sample_rate: usize) {
         self.state
             .ltc
-            .add_progress((samples * self.frame_rate as usize * 65536 / sample_rate) as u16);
+            .add_progress((samples * self.frame_rate() as usize * 65536 / sample_rate) as u16);
     }
 
     fn calculate_frame_overlap(&mut self, sample_rate: usize) -> u64 {
         // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-        let samples_per_frame: usize = sample_rate / self.frame_rate as usize;
+        let samples_per_frame: usize = sample_rate / self.frame_rate() as usize;
         let samples_per_bit: usize = samples_per_frame / 80;
 
         let subframe_sample =
@@ -196,7 +196,7 @@ impl TimecodeSource {
                 .copy_within(samples_per_frame..2 * samples_per_frame, 0);
 
             // write next frame into next frame buffer
-            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
+            let next_frame_bits = self.generate_smpte_frame_bits();
             let next_frame_buf = &self
                 .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
                 [0..samples_per_frame];
@@ -218,6 +218,7 @@ impl TimecodeSource {
 
     fn frame(&mut self, frame_size: usize, sample_rate: usize) -> &[f32] {
         if self.state.running {
+            // FIXME: handle drop-frame and color-framing options
             self.advance_by_samples(frame_size, sample_rate);
         }
 
@@ -268,23 +269,22 @@ impl audio::source::AudioSource for TimecodeSource {
         Ok(self.frame(ctx.frame_size, ctx.sample_rate))
     }
 
-    fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
 
-    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
-        if let Some(EventDescription::TimecodeEvent { time }) = event.event {
-            if ctx.beat.next_beat_idx != event.location {
-                return;
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+        if let Some(EventDescription::TimecodeEvent { time, properties }) = event.event {
+            self.properties = properties;
+
+            // FIXME: actually handle wall time
+            if !self.properties.use_wall_time {
+                self.state.ltc = time;
             }
-            // if this cycle will run over the edge into next beat, we set the new timecode
-            // immediately AND restart the frame progress from 0. This is important, as
-            // otherwise, the frame time would change mid-frame, and confusion follows.
-            // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
-            // frame starts up to 1 whole cycle too early, but it is negligible, as the
-            // normal accuracy is only 1/fps (>33ms)
-            self.state.ltc = time;
-            // FIXME: This is temporary solution for stopping timecode. Needs proper support from
-            // clicks-common. When a timecode event is set above 24 hours, it will stop
-            self.state.running = time.h <= 24;
+
+            self.state.running = true;
+        }
+
+        if let Some(EventDescription::TimecodeStopEvent) = event.event {
+            self.state.running = false
         }
     }
 }
