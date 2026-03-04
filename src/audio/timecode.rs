@@ -166,7 +166,10 @@ impl TimecodeSource {
             while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event
+                if let Some(EventDescription::TimecodeEvent {
+                    time: new_time,
+                    properties,
+                }) = event.event
                     && event.location == i
                 {
                     time = new_time;
@@ -271,7 +274,7 @@ impl audio::source::AudioSource for TimecodeSource {
     fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
 
     fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
-        if let Some(EventDescription::TimecodeEvent { time }) = event.event {
+        if let Some(EventDescription::TimecodeEvent { time, properties }) = event.event {
             if ctx.beat.next_beat_idx != event.location {
                 return;
             }

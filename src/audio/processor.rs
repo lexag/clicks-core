@@ -216,7 +216,7 @@ impl AudioProcessor {
         self.ctx = AudioSourceContext {
             jack_time: c.time(),
             frame_size: ps.n_frames() as usize,
-            sample_rate: c.sample_rate(),
+            sample_rate: c.sample_rate() as usize,
             beat: self.status.beat_state(),
             transport: self.status.transport,
             cbnet: self.cbnet.clone(),
