@@ -217,6 +217,7 @@ impl TimecodeSource {
 
     fn frame(&mut self, frame_size: usize, sample_rate: usize) -> &[f32] {
         if self.state.running {
+            // FIXME: handle drop-frame and color-framing options
             self.advance_by_samples(frame_size, sample_rate);
         }
 
@@ -272,6 +273,8 @@ impl audio::source::AudioSource for TimecodeSource {
     fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         if let Some(EventDescription::TimecodeEvent { time, properties }) = event.event {
             self.properties = properties;
+
+            // FIXME: actually handle wall time
             if !self.properties.use_wall_time {
                 self.state.ltc = time;
             }
