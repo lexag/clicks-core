@@ -73,10 +73,10 @@ impl TimecodeSource {
         let s1: u128 = (self.state.ltc.s.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f0: u128 = ((self.state.ltc.f.abs()) % 10)
+        let f0: u128 = ((self.state.ltc.f.abs() + self.properties.frame_offset as i8) % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f1: u128 = ((self.state.ltc.f.abs()) / 10)
+        let f1: u128 = ((self.state.ltc.f.abs() + self.properties.frame_offset as i8) / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
 
