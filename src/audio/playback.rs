@@ -8,10 +8,10 @@ use common::{
     event::{EventCursor, EventDescription},
     local::{
         config::{LogContext, LogItem, LogKind},
-        status::{AudioSourceState, PlaybackState},
+        status::{AudioSourceState, PlaybackHandlerStatus, PlaybackState},
     },
     protocol::{
-        message::{Message, SmallMessage},
+        message::{LargeMessage, Message, SmallMessage},
         request::ControlAction,
     },
 };
@@ -240,6 +240,17 @@ impl PlaybackHandler {
                 self.clips[channel_idx][slot_idx].write(*clip as usize, buf);
             }
         }
+
+        self.cbnet
+            .notify(Message::Large(LargeMessage::PlaybackHandlerChanged(
+                PlaybackHandlerStatus {
+                    clips: self
+                        .clips
+                        .iter()
+                        .map(|v| v.iter().map(|c| c.read_index() as u16).collect())
+                        .collect(),
+                },
+            )));
     }
 }
 
