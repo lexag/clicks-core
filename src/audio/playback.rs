@@ -10,7 +10,10 @@ use common::{
         config::{LogContext, LogItem, LogKind},
         status::{AudioSourceState, PlaybackState},
     },
-    protocol::request::ControlAction,
+    protocol::{
+        message::{Message, SmallMessage},
+        request::ControlAction,
+    },
 };
 use std::{fmt::Debug, ops::Div, path::PathBuf, sync::Arc};
 
@@ -341,16 +344,27 @@ impl PlaybackDevice {
         running_sample += time_off_us as i32 / 100 * 48 / 10;
         (running_clip as usize, running_active, running_sample)
     }
+
+    fn make_status(&self) -> PlaybackState {
+        let mut clips = [0u16; 16];
+        for (i, clip) in self.clips.iter().enumerate() {
+            clips[i] = clip.read_index() as u16;
+        }
+        PlaybackState {
+            channel: self.channel_idx as u8,
+            clips,
+            clip_idx: self.current_clip as u16,
+            current_sample: self.current_sample,
+            playing: self.active,
+            clip_length: self.clips[self.current_clip].get_length(),
+        }
+    }
 }
 
 impl AudioSource for PlaybackDevice {
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
         if !ctx.transport.running {
             return Ok(self.silence(ctx.frame_size));
-        }
-
-        if self.channel_idx == 0 {
-            println!("{:?}", self);
         }
 
         // If currently not playing or prerolling before playing, return silence
@@ -363,8 +377,15 @@ impl AudioSource for PlaybackDevice {
             > self.clips[self.current_clip].get_length() as i32
         {
             self.active = false;
+            ctx.cbnet.notify(Message::Small(SmallMessage::PlaybackData(
+                self.make_status(),
+            )));
             return Ok(self.silence(ctx.frame_size));
         }
+
+        ctx.cbnet.notify(Message::Small(SmallMessage::PlaybackData(
+            self.make_status(),
+        )));
 
         // All is well, return clip audio
         let buf = self.clips[self.current_clip]
@@ -397,18 +418,7 @@ impl AudioSource for PlaybackDevice {
     }
 
     fn get_status(&mut self, ctx: &AudioSourceContext) -> AudioSourceState {
-        let mut clips = [0u16; 16];
-        for (i, clip) in self.clips.iter_mut().enumerate() {
-            clips[i] = clip.read_index() as u16;
-        }
-        AudioSourceState::PlaybackStatus(PlaybackState {
-            channel: self.channel_idx as u8,
-            clips,
-            clip_idx: self.current_clip as u16,
-            current_sample: self.current_sample,
-            playing: self.active,
-            clip_length: self.clips[self.current_clip].get_length(),
-        })
+        AudioSourceState::PlaybackStatus(self.make_status())
     }
 
     fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
@@ -445,6 +455,10 @@ impl AudioSource for PlaybackDevice {
                     return;
                 }
                 self.active = false;
+
+                ctx.cbnet.notify(Message::Small(SmallMessage::PlaybackData(
+                    self.make_status(),
+                )));
             }
             _ => {}
         }
