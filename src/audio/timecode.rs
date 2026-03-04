@@ -3,15 +3,13 @@ use crate::audio::{self, source::AudioSourceContext};
 use common::{
     event::{EventCursor, EventDescription},
     local::status::{AudioSourceState, TimecodeState},
-    mem::smpte::TimecodeInstant,
+    mem::smpte::{TimecodeInstant, TimecodeProperties},
     protocol::request::ControlAction,
 };
 
 pub struct TimecodeSource {
     pub frame_rate: u8,
-    pub drop_frame: bool,
-    pub color_framing: bool,
-    pub external_clock: bool,
+    pub properties: TimecodeProperties,
     volume: f32,
     frame_buffer: [f32; 8192],
     state: TimecodeState,
@@ -22,9 +20,7 @@ impl Default for TimecodeSource {
     fn default() -> Self {
         Self {
             frame_rate: 25,
-            drop_frame: false,
-            color_framing: false,
-            external_clock: false,
+            properties: TimecodeProperties::default(),
             volume: 0.5,
             frame_buffer: [0.0f32; 8192],
             state: TimecodeState {
@@ -58,7 +54,7 @@ impl TimecodeSource {
         parity
     }
 
-    fn generate_smpte_frame_bits(&self, user_bits: u32) -> u128 {
+    fn generate_smpte_frame_bits(&self) -> u128 {
         let h0: u128 = (self.state.ltc.h.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
@@ -83,7 +79,6 @@ impl TimecodeSource {
         let f1: u128 = ((self.state.ltc.f.abs()) / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let user_bits: u32 = 0;
 
         let mut t_enc: u128 = 0;
 
@@ -98,11 +93,12 @@ impl TimecodeSource {
         t_enc |= h1 << 56;
 
         // flags
-        t_enc |= (self.drop_frame as u128) << 10;
-        t_enc |= (self.color_framing as u128) << 11;
-        t_enc |= (self.external_clock as u128) << 58;
+        t_enc |= (self.properties.drop_frame as u128) << 10;
+        t_enc |= (self.properties.color_framing as u128) << 11;
+        t_enc |= (self.properties.use_wall_time as u128) << 58;
 
         // user bits
+        let user_bits = u32::from_ne_bytes(self.properties.user_bits);
         for i in 0..8 {
             t_enc |= ((user_bits & (0b1111 << i)) as u128) << (4 * i + 4);
         }
@@ -199,7 +195,7 @@ impl TimecodeSource {
                 .copy_within(samples_per_frame..2 * samples_per_frame, 0);
 
             // write next frame into next frame buffer
-            let next_frame_bits = self.generate_smpte_frame_bits(0x0);
+            let next_frame_bits = self.generate_smpte_frame_bits();
             let next_frame_buf = &self
                 .generate_smpte_frame_buffer(next_frame_bits, samples_per_bit)
                 [0..samples_per_frame];
@@ -271,23 +267,20 @@ impl audio::source::AudioSource for TimecodeSource {
         Ok(self.frame(ctx.frame_size, ctx.sample_rate))
     }
 
-    fn event_occured(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
 
-    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
         if let Some(EventDescription::TimecodeEvent { time, properties }) = event.event {
-            if ctx.beat.next_beat_idx != event.location {
-                return;
+            self.properties = properties;
+            if !self.properties.use_wall_time {
+                self.state.ltc = time;
             }
-            // if this cycle will run over the edge into next beat, we set the new timecode
-            // immediately AND restart the frame progress from 0. This is important, as
-            // otherwise, the frame time would change mid-frame, and confusion follows.
-            // Technically, this causes up to fps/48000 (<630us) seconds of inaccuracy, as the
-            // frame starts up to 1 whole cycle too early, but it is negligible, as the
-            // normal accuracy is only 1/fps (>33ms)
-            self.state.ltc = time;
-            // FIXME: This is temporary solution for stopping timecode. Needs proper support from
-            // clicks-common. When a timecode event is set above 24 hours, it will stop
-            self.state.running = time.h <= 24;
+
+            self.state.running = true;
+        }
+
+        if let Some(EventDescription::TimecodeStopEvent) = event.event {
+            self.state.running = false
         }
     }
 }
