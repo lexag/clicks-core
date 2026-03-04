@@ -218,6 +218,7 @@ fn main() {
                     config.update(conf);
                     nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
                 }
+
                 _ => {}
             };
         }
