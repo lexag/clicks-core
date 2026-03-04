@@ -1,7 +1,7 @@
 ## v1.3.0 - 2026-03-04
 - Update to ClicKS common v2.2.0
     - Send new PlaybackData and PlaybackHandlerChanged on playback frames and cue loads, respectively
-    - SMPTE generator supports user bits and frame offsets
+    - SMPTE generator supports user bits, frame offsets and multiple frame rates
     - The RunEvent ControlAction can now be used to run arbitrary events from clients
 
 ## v1.2.4 - 2026-02-26

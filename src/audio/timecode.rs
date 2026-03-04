@@ -8,7 +8,6 @@ use common::{
 };
 
 pub struct TimecodeSource {
-    pub frame_rate: u8,
     pub properties: TimecodeProperties,
     volume: f32,
     frame_buffer: [f32; 8192],
@@ -19,7 +18,6 @@ pub struct TimecodeSource {
 impl Default for TimecodeSource {
     fn default() -> Self {
         Self {
-            frame_rate: 25,
             properties: TimecodeProperties::default(),
             volume: 0.5,
             frame_buffer: [0.0f32; 8192],
@@ -33,15 +31,18 @@ impl Default for TimecodeSource {
 }
 
 impl TimecodeSource {
-    pub fn new(frame_rate: u8) -> TimecodeSource {
+    pub fn new() -> TimecodeSource {
         TimecodeSource {
-            frame_rate,
             state: TimecodeState {
                 running: false,
-                ltc: TimecodeInstant::new(frame_rate),
+                ltc: TimecodeInstant::new(25),
             },
             ..Default::default()
         }
+    }
+
+    fn frame_rate(&self) -> u8 {
+        self.state.ltc.frame_rate
     }
 
     fn even_parity_bit(&self, mut data: u128) -> u128 {
@@ -107,7 +108,7 @@ impl TimecodeSource {
         t_enc |= 0b1011111111111100 << 64;
 
         let polarity_correction_bit: u128 = self.even_parity_bit(t_enc);
-        if self.frame_rate == 25 {
+        if self.frame_rate() == 25 {
             t_enc |= polarity_correction_bit << 59;
         } else {
             t_enc |= polarity_correction_bit << 27;
@@ -155,7 +156,7 @@ impl TimecodeSource {
             s: 0,
             f: 0,
             frame_progress: 0,
-            frame_rate: self.frame_rate,
+            frame_rate: self.frame_rate(),
         };
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
@@ -179,12 +180,12 @@ impl TimecodeSource {
     pub fn advance_by_samples(&mut self, samples: usize, sample_rate: usize) {
         self.state
             .ltc
-            .add_progress((samples * self.frame_rate as usize * 65536 / sample_rate) as u16);
+            .add_progress((samples * self.frame_rate() as usize * 65536 / sample_rate) as u16);
     }
 
     fn calculate_frame_overlap(&mut self, sample_rate: usize) -> u64 {
         // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
-        let samples_per_frame: usize = sample_rate / self.frame_rate as usize;
+        let samples_per_frame: usize = sample_rate / self.frame_rate() as usize;
         let samples_per_bit: usize = samples_per_frame / 80;
 
         let subframe_sample =
