@@ -4,7 +4,10 @@ use common::{
     event::{EventCursor, EventDescription},
     local::status::{AudioSourceState, TimecodeState},
     mem::smpte::{TimecodeInstant, TimecodeProperties},
-    protocol::request::ControlAction,
+    protocol::{
+        message::{Message, SmallMessage},
+        request::ControlAction,
+    },
 };
 
 pub struct TimecodeSource {
@@ -239,9 +242,13 @@ impl audio::source::AudioSource for TimecodeSource {
             ControlAction::TransportZero => {
                 self.state.ltc.set_time(0, 0, 0, 0);
                 self.state.ltc.frame_progress = 0;
+                ctx.cbnet
+                    .notify(Message::Small(SmallMessage::TimecodeData(self.state)));
             }
             ControlAction::TransportStop => {
                 self.state.running = false;
+                ctx.cbnet
+                    .notify(Message::Small(SmallMessage::TimecodeData(self.state)));
             }
             ControlAction::TransportStart => {
                 self.state.running = true;
@@ -262,9 +269,12 @@ impl audio::source::AudioSource for TimecodeSource {
     }
 
     fn send_buffer(&mut self, ctx: &AudioSourceContext) -> Result<&[f32], jack::Error> {
-        if !ctx.transport.running || !self.state.running {
+        if !self.state.running {
             return Ok(self.silence(ctx.frame_size));
         }
+
+        ctx.cbnet
+            .notify(Message::Small(SmallMessage::TimecodeData(self.state)));
 
         Ok(self.frame(ctx.frame_size, ctx.sample_rate))
     }
@@ -284,7 +294,9 @@ impl audio::source::AudioSource for TimecodeSource {
         }
 
         if let Some(EventDescription::TimecodeStopEvent) = event.event {
-            self.state.running = false
+            self.state.running = false;
+            ctx.cbnet
+                .notify(Message::Small(SmallMessage::TimecodeData(self.state)));
         }
     }
 }

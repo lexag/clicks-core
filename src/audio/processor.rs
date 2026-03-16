@@ -291,10 +291,6 @@ impl ProcessHandler for AudioProcessor {
             };
         }
 
-        if self.status.transport.running && self.status.time_state().running {
-            self.notify_push(MessageType::TimecodeData);
-        }
-
         if self.status_changed_flag {
             self.notify_push(MessageType::TransportData);
             self.status_changed_flag = false;
