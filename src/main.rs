@@ -102,6 +102,7 @@ fn main() {
             show
         }
         Err(err) => {
+            println!("Failed to load show: {:?}", err);
             #[cfg(feature = "i2c-ui")]
             let _ = hardware::display::show_load_failure(&err.to_string());
             let mut show = Show::default();
@@ -174,6 +175,9 @@ fn main() {
                         ah.get_jack_status(),
                     )));
                     nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
+                    nh.notify(Message::Large(LargeMessage::PlaybackHandlerChanged(
+                        pbh.get_status(),
+                    )));
                 }
                 Request::Shutdown => {
                     let _ = boot::write_config(config);
@@ -196,7 +200,7 @@ fn main() {
                         ),
                         audio::source::SourceConfig::new(
                             "timecode".to_string(),
-                            Box::new(TimecodeSource::new(25)),
+                            Box::new(TimecodeSource::new()),
                         ),
                     ];
                     pbh.load_show(show.clone());
@@ -218,6 +222,7 @@ fn main() {
                     config.update(conf);
                     nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
                 }
+
                 _ => {}
             };
         }
