@@ -3,7 +3,7 @@ use common::{
     event::Event,
     local::{
         config::{LogContext, LogItem, LogKind},
-        status::{AudioSourceState, CombinedStatus},
+        status::{AudioSourceState, CombinedStatus, PlaybackHandlerStatus},
     },
     mem::typeflags::MessageType,
     protocol::{
@@ -110,6 +110,7 @@ impl AudioProcessor {
             ControlAction::TransportStart => {
                 self.status.transport.running = true;
                 self.notify_push(MessageType::TransportData);
+                self.send_beat_events_to_children(self.status.beat_state().beat_idx);
             }
             ControlAction::TransportStop => {
                 self.status.transport.running = false;
@@ -185,7 +186,9 @@ impl AudioProcessor {
 
         if new_idx != current_beat {
             self.notify_push(MessageType::BeatData);
-            self.send_beat_events_to_children(self.status.beat_state().beat_idx);
+            if self.status.transport.running {
+                self.send_beat_events_to_children(self.status.beat_state().beat_idx);
+            }
         }
     }
 
