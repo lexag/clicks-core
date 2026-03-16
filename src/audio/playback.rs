@@ -233,6 +233,12 @@ impl PlaybackHandler {
     }
 
     pub fn load_cue(&self, cue: Cue) {
+        for channel in &self.clips {
+            for clips in channel {
+                clips.write(usize::MAX, vec![]);
+            }
+        }
+
         for (channel_idx, clips) in self.clip_idxs_in_cue(&cue).iter_mut().enumerate() {
             clips.sort();
             for (slot_idx, clip) in clips.iter().enumerate() {
@@ -243,14 +249,18 @@ impl PlaybackHandler {
 
         self.cbnet
             .notify(Message::Large(LargeMessage::PlaybackHandlerChanged(
-                PlaybackHandlerStatus {
-                    clips: self
-                        .clips
-                        .iter()
-                        .map(|v| v.iter().map(|c| c.read_index() as u16).collect())
-                        .collect(),
-                },
+                self.get_status(),
             )));
+    }
+
+    pub fn get_status(&self) -> PlaybackHandlerStatus {
+        PlaybackHandlerStatus {
+            clips: self
+                .clips
+                .iter()
+                .map(|v| v.iter().map(|c| c.read_index() as u16).collect())
+                .collect(),
+        }
     }
 }
 
@@ -367,7 +377,11 @@ impl PlaybackDevice {
             clip_idx: self.current_clip as u16,
             current_sample: self.current_sample,
             playing: self.active,
-            clip_length: self.clips[self.current_clip].get_length(),
+            clip_length: if self.clips.is_empty() {
+                0
+            } else {
+                self.clips[self.current_clip].get_length()
+            },
         }
     }
 }
