@@ -48,16 +48,17 @@ impl LogDispatcher {
     }
 
     pub fn log(&self, item: LogItem) -> Result<(), std::io::Error> {
-        if item.kind.intersects(self.kind_filter) && item.context.intersects(self.context_filter) {
-            if let Some(handler) = &self.file_handler {
-                handler.log_to_file(&item)?;
-            }
-
-            self.cbnet.notify(common::protocol::message::Message::Large(
-                common::protocol::message::LargeMessage::Log(item.clone()),
-            ));
-            // also send message
+        // Write to file
+        if let Some(handler) = &self.file_handler {
+            handler.log_to_file(&item)?;
         }
+
+        // Write to network
+        self.cbnet.notify(common::protocol::message::Message::Large(
+            common::protocol::message::LargeMessage::Log(item.clone()),
+        ));
+
+        // Write (errors and warnings) to display
         if item.kind.intersects(LogKind::Error | LogKind::Warning) {
             hardware::display::generic_failure(item.message)?;
         }
@@ -154,7 +155,7 @@ impl LogFileHandler {
         }
 
         let _ = std::fs::rename(
-            "log.txt",
+            self.log_path.join("log.txt"),
             self.log_path.join(
                 PathBuf::from_str(&format!("log_{time_hash}.txt"))
                     .expect("(Semi-)constant path, cannot fail"),
