@@ -237,6 +237,13 @@ fn main() {
             last_heartbeat_time = Instant::now();
             loop_count = 0;
         }
+
+        // cap main loop rate to 500kHz to save CPU
+        if loop_count > 500_000 - 10 {
+            std::thread::sleep(
+                Duration::from_secs(1).saturating_sub(last_heartbeat_time.elapsed()) / 10,
+            );
+        }
     }
 }
 
