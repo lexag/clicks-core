@@ -239,9 +239,9 @@ fn main() {
         }
 
         // cap main loop rate to 500kHz to save CPU
-        if loop_count > 500_000 - 10 {
+        if loop_count > 500_000 - 100_000 {
             std::thread::sleep(
-                Duration::from_secs(1).saturating_sub(last_heartbeat_time.elapsed()) / 10,
+                Duration::from_secs(1).saturating_sub(last_heartbeat_time.elapsed()) / 100_000,
             );
         }
     }
