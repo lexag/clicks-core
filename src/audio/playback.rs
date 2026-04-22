@@ -346,7 +346,7 @@ impl PlaybackDevice {
                     }) => {
                         if channel_idx == self.channel_idx {
                             running_sample = sample;
-                            running_clip = clip_idx;
+                            running_clip = self.find_audioclip_idx_from_clip_idx(clip_idx);
                             running_active = true;
                             time_off_us = 0;
                         }
@@ -363,7 +363,7 @@ impl PlaybackDevice {
         }
         // TODO: support multiple and resampled sample rates
         running_sample += time_off_us as i32 / 100 * 48 / 10;
-        (running_clip as usize, running_active, running_sample)
+        (running_clip, running_active, running_sample)
     }
 
     fn make_status(&self) -> PlaybackState {
@@ -383,6 +383,15 @@ impl PlaybackDevice {
                 self.clips[self.current_clip].get_length()
             },
         }
+    }
+
+    fn find_audioclip_idx_from_clip_idx(&self, clip_idx: u16) -> usize {
+        for (i, clip) in self.clips.iter().enumerate() {
+            if clip.read_index() == clip_idx as usize {
+                return i;
+            }
+        }
+        0
     }
 }
 
@@ -469,11 +478,6 @@ impl AudioSource for PlaybackDevice {
                         break;
                     }
                 }
-
-                println!(
-                    "ch: {} active: {}, clip: {}",
-                    self.channel_idx, self.active, self.current_clip
-                )
             }
             Some(EventDescription::PlaybackStopEvent { channel_idx }) => {
                 if channel_idx != self.channel_idx {

@@ -3,6 +3,7 @@
     - Send new PlaybackData and PlaybackHandlerChanged on playback frames and cue loads, respectively
     - SMPTE generator supports user bits, frame offsets and multiple frame rates
     - The RunEvent ControlAction can now be used to run arbitrary events from clients
+- Fix [#16 Crash on seeking in large playback file](https://github.com/lexag/clicks-core/issues/16)
 - Improvements to SMPTE LTC timecode
     - 25 fps is now *identical* to REAPER SMPTE generator.
 
