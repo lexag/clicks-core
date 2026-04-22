@@ -78,29 +78,29 @@ impl TimecodeSource {
         parity
     }
 
-    fn generate_smpte_frame_bits(&self) -> u128 {
-        let h0: u128 = (self.state.ltc.h.abs() % 10)
+    fn generate_smpte_frame_bits(&self, time: TimecodeInstant) -> u128 {
+        let h0: u128 = (time.h.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let h1: u128 = (self.state.ltc.h.abs() / 10)
+        let h1: u128 = (time.h.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let m0: u128 = (self.state.ltc.m.abs() % 10)
+        let m0: u128 = (time.m.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let m1: u128 = (self.state.ltc.m.abs() / 10)
+        let m1: u128 = (time.m.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let s0: u128 = (self.state.ltc.s.abs() % 10)
+        let s0: u128 = (time.s.abs() % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let s1: u128 = (self.state.ltc.s.abs() / 10)
+        let s1: u128 = (time.s.abs() / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f0: u128 = ((self.state.ltc.f.abs() + self.properties.frame_offset as i8) % 10)
+        let f0: u128 = ((time.f.abs() + self.properties.frame_offset as i8) % 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
-        let f1: u128 = ((self.state.ltc.f.abs() + self.properties.frame_offset as i8) / 10)
+        let f1: u128 = ((time.f.abs() + self.properties.frame_offset as i8) / 10)
             .try_into()
             .expect("u16 -> u128 cannot fail.");
 
@@ -158,8 +158,11 @@ impl TimecodeSource {
         t_enc
     }
 
-    fn generate_smpte_frame_buffer(&self, samples_per_bit: usize) -> [f32; 2048] {
-        let bits = self.generate_smpte_frame_bits();
+    fn generate_smpte_frame_buffer(&self, samples_per_bit: usize, frame_offset: i8) -> [f32; 2048] {
+        let mut time_with_offs = self.state.ltc.clone();
+        time_with_offs.f += frame_offset;
+        time_with_offs.add_progress(0);
+        let bits = self.generate_smpte_frame_bits(time_with_offs);
 
         let mut buf = [0f32; 2048];
         let mut current_parity = 1;
@@ -195,12 +198,12 @@ impl TimecodeSource {
         let samples_per_frame: usize = self.samples_per_frame();
         let samples_per_bit: usize = self.samples_per_bit();
 
-        let a_frame_buf = &self.generate_smpte_frame_buffer(samples_per_bit)[..samples_per_frame];
+        let a_frame_buf =
+            &self.generate_smpte_frame_buffer(samples_per_bit, 0)[..samples_per_frame];
         self.frame_buffer[..samples_per_frame].copy_from_slice(a_frame_buf);
 
-        self.increment();
-
-        let b_frame_buf = &self.generate_smpte_frame_buffer(samples_per_bit)[..samples_per_frame];
+        let b_frame_buf =
+            &self.generate_smpte_frame_buffer(samples_per_bit, 1)[..samples_per_frame];
         self.frame_buffer[samples_per_frame..2 * samples_per_frame].copy_from_slice(b_frame_buf);
 
         //for (i, s) in self.frame_buffer.iter().enumerate() {
@@ -208,8 +211,6 @@ impl TimecodeSource {
         //}
 
         //self.state.ltc.sub_us(1_000_000 / self.frame_rate() as u64);
-
-        self.decrement();
 
         // DEBUG:
         //for (i, s) in self.frame_buffer.iter_mut().enumerate() {
@@ -298,10 +299,8 @@ impl TimecodeSource {
                 .copy_within(samples_per_frame..2 * samples_per_frame, 0);
 
             // write next frame into next frame buffer
-            self.increment();
             let next_frame_buf =
-                &self.generate_smpte_frame_buffer(samples_per_bit)[..samples_per_frame];
-            self.decrement();
+                &self.generate_smpte_frame_buffer(samples_per_bit, 1)[..samples_per_frame];
             self.frame_buffer[samples_per_frame..2 * samples_per_frame]
                 .copy_from_slice(next_frame_buf);
         }
@@ -507,7 +506,7 @@ mod tests {
         use super::*;
 
         const BLOCK_SIZE: usize = 256;
-        const NUM_BLOCKS: usize = 100;
+        const NUM_BLOCKS: usize = 1000;
         const SAMPLE_RATE: usize = 48000;
         const SMPTE_FRAME_RATE: usize = 25;
         const SAMPLES_PER_FRAME: usize = SAMPLE_RATE / SMPTE_FRAME_RATE;
