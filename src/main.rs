@@ -93,23 +93,9 @@ fn main() {
             SystemConfiguration::default()
         }
     };
-    let show = match ShowBuilder::from_bin_file(
-        boot::get_show_path().unwrap_or_default().join("show.bin"),
-    ) {
-        Ok(show) => {
-            #[cfg(feature = "i2c-ui")]
-            let _ = hardware::display::show_load_success(&show);
-            show
-        }
-        Err(err) => {
-            #[cfg(feature = "i2c-ui")]
-            let _ = hardware::display::show_load_failure(&err.to_string());
-            let mut show = Show::default();
-            show.cues.push(Cue::example());
-            show.cues[0].events.pop(0);
-            show
-        }
-    };
+
+    let mut show = load_show(&log_dispatcher);
+
     #[cfg(feature = "i2c-ui")]
     {
         std::thread::sleep(Duration::from_secs(5));
@@ -174,6 +160,9 @@ fn main() {
                         ah.get_jack_status(),
                     )));
                     nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
+                    nh.notify(Message::Large(LargeMessage::PlaybackHandlerChanged(
+                        pbh.get_status(),
+                    )));
                 }
                 Request::Shutdown => {
                     let _ = boot::write_config(config);
@@ -189,6 +178,7 @@ fn main() {
                 }
 
                 Request::Initialize => {
+                    show = load_show(&log_dispatcher);
                     let mut sources = vec![
                         audio::source::SourceConfig::new(
                             "metronome".to_string(),
@@ -196,7 +186,9 @@ fn main() {
                         ),
                         audio::source::SourceConfig::new(
                             "timecode".to_string(),
-                            Box::new(TimecodeSource::new(25)),
+                            Box::new(TimecodeSource::new(
+                                config.audio.server.sample_rate as usize,
+                            )),
                         ),
                     ];
                     pbh.load_show(show.clone());
@@ -218,6 +210,7 @@ fn main() {
                     config.update(conf);
                     nh.notify(Message::Large(LargeMessage::ConfigurationChanged(config)));
                 }
+
                 _ => {}
             };
         }
@@ -245,6 +238,45 @@ fn main() {
             osch.notify(heartbeat.clone());
             last_heartbeat_time = Instant::now();
             loop_count = 0;
+        }
+
+        // cap main loop rate to 500kHz to save CPU
+        if loop_count > 500_000 - 100_000 {
+            std::thread::sleep(
+                Duration::from_secs(1).saturating_sub(last_heartbeat_time.elapsed()) / 100_000,
+            );
+        }
+    }
+}
+
+fn load_show(log_dispatcher: &LogDispatcher) -> Show {
+    match ShowBuilder::from_bin_file(boot::get_show_path().unwrap_or_default().join("show.bin")) {
+        Ok(show) => {
+            log_dispatcher.log(LogItem::new(
+                format!("Successfully loaded show with {} cues", show.cues.len()),
+                LogContext::Boot,
+                LogKind::Note,
+            ));
+
+            #[cfg(feature = "i2c-ui")]
+            let _ = hardware::display::show_load_success(&show);
+
+            show
+        }
+        Err(err) => {
+            log_dispatcher.log(LogItem::new(
+                format!("Failed to load show: {:?}", err),
+                LogContext::Boot,
+                LogKind::Error,
+            ));
+            println!("show load err {:?}", err);
+
+            #[cfg(feature = "i2c-ui")]
+            let _ = hardware::display::show_load_failure(&err.to_string());
+            let mut show = Show::default();
+            show.cues.push(Cue::example());
+            show.cues[0].events.pop(0);
+            show
         }
     }
 }
