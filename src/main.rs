@@ -186,7 +186,9 @@ fn main() {
                         ),
                         audio::source::SourceConfig::new(
                             "timecode".to_string(),
-                            Box::new(TimecodeSource::new()),
+                            Box::new(TimecodeSource::new(
+                                config.audio.server.sample_rate as usize,
+                            )),
                         ),
                     ];
                     pbh.load_show(show.clone());
