@@ -1,4 +1,4 @@
-use common::protocol::{message::Message, request::Request};
+use ks_common_clicks::protocol::{message::Message, request::Request};
 
 pub trait CommunicationInterface: Send {
     fn get_inputs(&mut self, limit: usize) -> Vec<Request>;

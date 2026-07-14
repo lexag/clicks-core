@@ -5,7 +5,8 @@ use ssd1306::{
 };
 
 use crate::VERSION;
-use common::{VERSION as COMMON_VERSION, cue::Show};
+use ks_common_clicks::cue::Show;
+use ks_common_generic::VERSION as COMMON_VERSION;
 use linux_embedded_hal::I2cdev;
 use local_ip_address::local_ip;
 use ssd1306::size::DisplaySize128x64;

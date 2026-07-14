@@ -1,5 +1,5 @@
 use crate::logger::LogDispatcher;
-use common::local::config::{LogContext, LogItem, LogKind, SystemConfiguration};
+use ks_common_clicks::local::config::{LogContext, LogItem, LogKind, SystemConfiguration};
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 #[derive(Debug)]

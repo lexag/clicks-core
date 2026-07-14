@@ -1,6 +1,6 @@
 use crate::communication::{interface::CommunicationInterface, netport::NetworkPort};
-use common::protocol::message::{LargeMessage, Message, SmallMessage};
-use common::protocol::request::{ControlAction, Request};
+use ks_common_clicks::protocol::message::{LargeMessage, Message, SmallMessage};
+use ks_common_clicks::protocol::request::{ControlAction, Request};
 use rosc::address::{Matcher, OscAddress};
 use rosc::decoder::decode_udp;
 use rosc::{OscBundle, OscError, OscMessage, OscPacket, OscTime, OscType};

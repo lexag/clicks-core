@@ -1,8 +1,8 @@
-use common::{
+use crossbeam_channel::{Receiver, Sender, unbounded};
+use ks_common_clicks::{
     local::config::LogItem,
     protocol::{message::Message, request::ControlAction},
 };
-use crossbeam_channel::{Receiver, Sender, unbounded};
 
 #[derive(Debug, Clone)]
 pub struct CrossbeamNetwork {

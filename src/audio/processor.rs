@@ -1,22 +1,22 @@
-use common::{
+use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
+use ks_common_clicks::{
     cue::{Cue, Show},
     event::Event,
     local::{
         config::{LogContext, LogItem, LogKind},
-        status::{AudioSourceState, CombinedStatus, PlaybackHandlerStatus},
+        status::{AudioSourceState, CombinedStatus, SmallCueState},
     },
-    mem::typeflags::MessageType,
     protocol::{
         message::{LargeMessage, Message, SmallMessage},
         request::ControlAction,
     },
 };
-use jack::{AudioOut, Client, Control, Port, ProcessHandler, ProcessScope, Unowned};
 
 use crate::{
     CrossbeamNetwork,
     audio::source::{AudioSourceContext, SourceConfig},
 };
+use ks_common_generic::typeflags::MessageType;
 
 pub struct AudioProcessor {
     sources: Vec<SourceConfig>,
@@ -65,12 +65,10 @@ impl AudioProcessor {
                 Message::Small(SmallMessage::BeatData(self.status.beat_state()))
             }
             MessageType::CueData => Message::Large(LargeMessage::CueData(self.status.cue.clone())),
-            MessageType::SmallCueData => Message::Small(SmallMessage::CueData(
-                common::local::status::SmallCueState {
-                    cue_idx: self.status.cue.cue_idx,
-                    cue_metadata: self.status.cue.cue.metadata,
-                },
-            )),
+            MessageType::SmallCueData => Message::Small(SmallMessage::CueData(SmallCueState {
+                cue_idx: self.status.cue.cue_idx,
+                cue_metadata: self.status.cue.cue.metadata,
+            })),
             MessageType::ShowData => {
                 Message::Large(LargeMessage::ShowData(self.status.show.clone()))
             }

@@ -5,17 +5,17 @@ use crate::{
     logger::LogDispatcher,
 };
 use chrono::{DateTime, Utc};
-use common::{
+use ks_common_clicks::{
     local::{
         config::{LogContext, LogItem, LogKind},
         status::NetworkStatus,
     },
-    mem::network::{IpAddress, SubscriberInfo},
     protocol::{
         message::{LargeMessage, Message},
         request::Request,
     },
 };
+use ks_common_generic::network::{IpAddress, SubscriberInfo};
 
 pub struct BinaryNetHandler {
     port: NetworkPort,

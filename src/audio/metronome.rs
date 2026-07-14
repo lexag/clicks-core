@@ -1,9 +1,8 @@
 use crate::audio;
 use crate::audio::source::AudioSourceContext;
-use common::event::{EventDescription, JumpModeChange, JumpRequirement};
-use common::local::status::{AudioSourceState, BeatState, TransportState};
-use common::protocol::message::{Message, SmallMessage};
-use common::protocol::request::ControlAction;
+use ks_common_clicks::event::{Event, EventDescription, JumpModeChange, JumpRequirement};
+use ks_common_clicks::local::status::{AudioSourceState, BeatState, TransportState};
+use ks_common_clicks::protocol::request::ControlAction;
 
 struct MetronomeClick {
     frequency: usize,
@@ -138,7 +137,7 @@ impl audio::source::AudioSource for Metronome {
         }
     }
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: Event) {
         if let Some(EventDescription::JumpEvent {
             destination,
             requirement,
@@ -161,5 +160,5 @@ impl audio::source::AudioSource for Metronome {
         }
     }
 
-    fn event_will_occur(&mut self, _ctx: &AudioSourceContext, _event: common::event::Event) {}
+    fn event_will_occur(&mut self, _ctx: &AudioSourceContext, _event: Event) {}
 }
