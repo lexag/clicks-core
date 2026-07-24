@@ -406,6 +406,8 @@ impl audio::source::AudioSource for TimecodeSource {
             //    self.preload_frame_buffer();
             //}
 
+            self.state.ltc = time;
+
             self.state.running = true;
         }
 
