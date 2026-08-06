@@ -1,37 +1,43 @@
-use crate::audio::{self, source::AudioSourceContext};
+use crate::{
+    audio::{self, source::AudioSourceContext},
+    cbnet::CrossbeamNetwork,
+};
 
-use common::{
-    event::{EventCursor, EventDescription},
+use ks_common_clicks::{
+    event::{Event, EventCursor, EventDescription},
     local::status::{AudioSourceState, TimecodeState},
-    mem::smpte::{TimecodeInstant, TimecodeProperties, TimecodeUserBitFormat},
     protocol::{
         message::{Message, SmallMessage},
         request::ControlAction,
     },
 };
+use ks_common_generic::smpte::{
+    FrameRate, Timecode, TimecodeOffset,
+    ltc::{LtcWriter, LtcWriterConfig, TimecodeWriter},
+};
 
 pub struct TimecodeSource {
-    pub properties: TimecodeProperties,
     volume: f32,
-    frame_buffer: [f32; 8192],
+    sample_buffer: [f32; 8192],
     state: TimecodeState,
-    last_cycle_frame: TimecodeInstant,
+    last_cycle_frame: Timecode,
     sample_rate: usize,
+    writer: LtcWriter,
     subframe_sample: u64,
 }
 
 impl Default for TimecodeSource {
     fn default() -> Self {
         Self {
-            properties: TimecodeProperties::default(),
             volume: 0.5,
-            frame_buffer: [0.0f32; 8192],
+            sample_buffer: [0.0f32; 8192],
             state: TimecodeState {
                 running: false,
-                ltc: TimecodeInstant::new(25),
+                ltc: Timecode::default(),
             },
-            last_cycle_frame: TimecodeInstant::new(25),
+            last_cycle_frame: Timecode::default(),
             sample_rate: 48000,
+            writer: LtcWriter::new(LtcWriterConfig::default()),
             subframe_sample: 0,
         }
     }
@@ -42,20 +48,24 @@ impl TimecodeSource {
         TimecodeSource {
             state: TimecodeState {
                 running: false,
-                ltc: TimecodeInstant::new(25),
+                ltc: Timecode::from_raw_fields(0, 0, 0, 0, 25, false, 0),
             },
             sample_rate,
+            writer: LtcWriter::new(LtcWriterConfig {
+                sample_rate: sample_rate as u32,
+                frame_rate: FrameRate::Fps25,
+                amplitude: 0.9,
+            }),
             ..Default::default()
         }
     }
 
-    pub fn init(sample_rate: usize, properties: TimecodeProperties) -> TimecodeSource {
+    pub fn init(sample_rate: usize) -> TimecodeSource {
         let mut tc = TimecodeSource {
             state: TimecodeState {
                 running: false,
-                ltc: TimecodeInstant::new(25),
+                ltc: Timecode::from_raw_fields(0, 0, 0, 0, 25, false, 0),
             },
-            properties,
             sample_rate,
             ..Default::default()
         };
@@ -64,8 +74,8 @@ impl TimecodeSource {
         tc
     }
 
-    fn frame_rate(&self) -> u8 {
-        self.state.ltc.frame_rate
+    fn frame_rate(&self) -> FrameRate {
+        self.writer.frame_rate()
     }
 
     fn even_parity_bit(&self, mut data: u128) -> u128 {
@@ -78,120 +88,121 @@ impl TimecodeSource {
         parity
     }
 
-    fn generate_smpte_frame_bits(&self, time: TimecodeInstant) -> u128 {
-        let h0: u128 = (time.h.abs() % 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
-        let h1: u128 = (time.h.abs() / 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
-        let m0: u128 = (time.m.abs() % 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
-        let m1: u128 = (time.m.abs() / 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
-        let s0: u128 = (time.s.abs() % 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
-        let s1: u128 = (time.s.abs() / 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
-        let f0: u128 = ((time.f.abs() + self.properties.frame_offset as i8) % 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
-        let f1: u128 = ((time.f.abs() + self.properties.frame_offset as i8) / 10)
-            .try_into()
-            .expect("u16 -> u128 cannot fail.");
+    //fn generate_smpte_frame_bits(&self, time: TimecodeInstant) -> u128 {
+    //    let h0: u128 = (time.h.abs() % 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
+    //    let h1: u128 = (time.h.abs() / 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
+    //    let m0: u128 = (time.m.abs() % 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
+    //    let m1: u128 = (time.m.abs() / 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
+    //    let s0: u128 = (time.s.abs() % 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
+    //    let s1: u128 = (time.s.abs() / 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
+    //    let f0: u128 = ((time.f.abs() + self.properties.frame_offset as i8) % 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
+    //    let f1: u128 = ((time.f.abs() + self.properties.frame_offset as i8) / 10)
+    //        .try_into()
+    //        .expect("u16 -> u128 cannot fail.");
 
-        let mut t_enc: u128 = 0;
+    //    let mut t_enc: u128 = 0;
 
-        // time values
-        t_enc |= f0;
-        t_enc |= f1 << 8;
-        t_enc |= s0 << 16;
-        t_enc |= s1 << 24;
-        t_enc |= m0 << 32;
-        t_enc |= m1 << 40;
-        t_enc |= h0 << 48;
-        t_enc |= h1 << 56;
+    //    // time values
+    //    t_enc |= f0;
+    //    t_enc |= f1 << 8;
+    //    t_enc |= s0 << 16;
+    //    t_enc |= s1 << 24;
+    //    t_enc |= m0 << 32;
+    //    t_enc |= m1 << 40;
+    //    t_enc |= h0 << 48;
+    //    t_enc |= h1 << 56;
 
-        // flags
-        t_enc |= (self.properties.drop_frame as u128) << 10;
-        t_enc |= (self.properties.color_framing as u128) << 11;
-        t_enc |= (self.properties.use_wall_time as u128) << 58;
+    //    // flags
+    //    t_enc |= (self.properties.drop_frame as u128) << 10;
+    //    t_enc |= (self.properties.color_framing as u128) << 11;
+    //    t_enc |= (self.properties.use_wall_time as u128) << 58;
 
-        let (polarity_idx, bin_group_0_idx, bin_group_2_idx) = if self.frame_rate() == 25 {
-            (59, 27, 43)
-        } else {
-            (27, 43, 59)
+    //    let (polarity_idx, bin_group_0_idx, bin_group_2_idx) = if self.frame_rate() == 25 {
+    //        (59, 27, 43)
+    //    } else {
+    //        (27, 43, 59)
+    //    };
+
+    //    // user bit format
+    //    t_enc |= (if self.properties.user_bit_format == TimecodeUserBitFormat::Reserved11
+    //        || self.properties.user_bit_format == TimecodeUserBitFormat::EightBitLittleEndian
+    //    {
+    //        1_u128
+    //    } else {
+    //        0_u128
+    //    }) << bin_group_0_idx;
+
+    //    t_enc |= (if self.properties.user_bit_format == TimecodeUserBitFormat::Reserved11
+    //        || self.properties.user_bit_format == TimecodeUserBitFormat::DateTimezone
+    //    {
+    //        1_u128
+    //    } else {
+    //        0_u128
+    //    }) << bin_group_2_idx;
+
+    //    // user bits
+    //    let user_bits = u32::from_ne_bytes(self.properties.user_bits);
+    //    for i in 0..8 {
+    //        t_enc |= ((user_bits & (0b1111 << i)) as u128) << (4 * i + 4);
+    //    }
+
+    //    // sync word
+    //    t_enc |= 0b1011111111111100 << 64;
+
+    //    let polarity_correction_bit: u128 = self.even_parity_bit(t_enc);
+    //    t_enc |= polarity_correction_bit << polarity_idx;
+    //    t_enc
+    //}
+
+    fn generate_smpte_frame_buffer(
+        &mut self,
+        samples_per_bit: usize,
+        frame_offset: i8,
+    ) -> Vec<f32> {
+        let mut time_with_offs = self.state.ltc.clone();
+        for i in 0..frame_offset {
+            time_with_offs.increment();
+        }
+        let Ok(samples) = self.writer.encode_frame(&time_with_offs) else {
+            return vec![0f32; samples_per_bit];
         };
 
-        // user bit format
-        t_enc |= (if self.properties.user_bit_format == TimecodeUserBitFormat::Reserved11
-            || self.properties.user_bit_format == TimecodeUserBitFormat::EightBitLittleEndian
-        {
-            1_u128
-        } else {
-            0_u128
-        }) << bin_group_0_idx;
+        samples
 
-        t_enc |= (if self.properties.user_bit_format == TimecodeUserBitFormat::Reserved11
-            || self.properties.user_bit_format == TimecodeUserBitFormat::DateTimezone
-        {
-            1_u128
-        } else {
-            0_u128
-        }) << bin_group_2_idx;
+        //let bits = self.generate_smpte_frame_bits(time_with_offs);
 
-        // user bits
-        let user_bits = u32::from_ne_bytes(self.properties.user_bits);
-        for i in 0..8 {
-            t_enc |= ((user_bits & (0b1111 << i)) as u128) << (4 * i + 4);
-        }
+        //let mut buf = [0f32; 2048];
+        //let mut current_parity = 1;
+        //for bit_idx in 0..80 {
+        //    let frame_bit = (0x1 << bit_idx) & bits;
+        //    for sample_idx in 0..samples_per_bit {
+        //        let idx = sample_idx + bit_idx as usize * samples_per_bit;
+        //        if sample_idx == 0 || (sample_idx == samples_per_bit / 2 && frame_bit != 0) {
+        //            current_parity *= -1;
+        //        }
 
-        // sync word
-        t_enc |= 0b1011111111111100 << 64;
+        //        buf[idx] = (current_parity as f32) * self.volume;
+        //    }
+        //}
 
-        let polarity_correction_bit: u128 = self.even_parity_bit(t_enc);
-        t_enc |= polarity_correction_bit << polarity_idx;
-        t_enc
-    }
+        //let mut lp_buffer = [0_f32; 2048];
+        //self.low_pass(&buf, &mut lp_buffer);
 
-    fn generate_smpte_frame_buffer(&self, samples_per_bit: usize, frame_offset: i8) -> [f32; 2048] {
-        let mut time_with_offs = self.state.ltc.clone();
-        time_with_offs.f += frame_offset;
-        time_with_offs.add_progress(0);
-        let bits = self.generate_smpte_frame_bits(time_with_offs);
-
-        let mut buf = [0f32; 2048];
-        let mut current_parity = 1;
-        for bit_idx in 0..80 {
-            let frame_bit = (0x1 << bit_idx) & bits;
-            for sample_idx in 0..samples_per_bit {
-                let idx = sample_idx + bit_idx as usize * samples_per_bit;
-                if sample_idx == 0 || (sample_idx == samples_per_bit / 2 && frame_bit != 0) {
-                    current_parity *= -1;
-                }
-
-                buf[idx] = (current_parity as f32) * self.volume;
-            }
-        }
-
-        let mut lp_buffer = [0_f32; 2048];
-        self.low_pass(&buf, &mut lp_buffer);
-
-        lp_buffer
-    }
-
-    fn increment(&mut self) {
-        self.state.ltc.f += 1;
-        self.state.ltc.add_progress(0);
-    }
-
-    fn decrement(&mut self) {
-        self.state.ltc.f -= 1;
-        self.state.ltc.add_progress(0);
+        //lp_buffer
     }
 
     fn preload_frame_buffer(&mut self) {
@@ -200,11 +211,11 @@ impl TimecodeSource {
 
         let a_frame_buf =
             &self.generate_smpte_frame_buffer(samples_per_bit, 0)[..samples_per_frame];
-        self.frame_buffer[..samples_per_frame].copy_from_slice(a_frame_buf);
+        self.sample_buffer[..samples_per_frame].copy_from_slice(a_frame_buf);
 
         let b_frame_buf =
             &self.generate_smpte_frame_buffer(samples_per_bit, 1)[..samples_per_frame];
-        self.frame_buffer[samples_per_frame..2 * samples_per_frame].copy_from_slice(b_frame_buf);
+        self.sample_buffer[samples_per_frame..2 * samples_per_frame].copy_from_slice(b_frame_buf);
 
         //for (i, s) in self.frame_buffer.iter().enumerate() {
         //    println!("fbuf {i:03} {s}")
@@ -223,7 +234,7 @@ impl TimecodeSource {
     }
 
     fn samples_per_frame(&self) -> usize {
-        self.sample_rate / self.frame_rate() as usize
+        (self.sample_rate as f64 / self.frame_rate().as_float()) as usize
     }
 
     fn low_pass(&self, buf: &[f32], out: &mut [f32]) {
@@ -249,69 +260,62 @@ impl TimecodeSource {
         //}
     }
 
-    fn calculate_time_at_beat(&self, ctx: &AudioSourceContext, beat_idx: u16) -> TimecodeInstant {
-        let mut time = TimecodeInstant {
-            h: 0,
-            m: 0,
-            s: 0,
-            f: 0,
-            frame_progress: 0,
-            frame_rate: self.frame_rate(),
-        };
+    fn calculate_time_at_beat(&self, ctx: &AudioSourceContext, beat_idx: u16) -> Timecode {
+        let mut time = Timecode::from_frames(0, self.frame_rate()).expect("tc 00:00");
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
             while cursor.at_or_before(beat_idx)
                 && let Some(event) = cursor.get_next()
             {
-                if let Some(EventDescription::TimecodeEvent {
-                    time: new_time,
-                    properties,
-                }) = event.event
+                if let Some(EventDescription::TimecodeEvent { time: new_time }) = event.event
                     && event.location == i
                 {
                     time = new_time;
                 }
             }
-            time.add_us(ctx.cue.get_beat(i).unwrap_or_default().length as u64);
+            time = (time
+                + self.tc_offset_from_seconds(
+                    ctx.cue.get_beat(i).unwrap_or_default().length as f64 / 1000000.0,
+                ))
+            .expect(
+                "this addition should really be unfailable and wrap but that is a ks-common fix",
+            );
         }
         time
     }
 
-    pub fn advance_by_samples(&mut self, samples: usize, sample_rate: usize) {
-        self.state
-            .ltc
-            .add_progress((samples * self.frame_rate() as usize * 65536 / sample_rate) as u16);
-    }
-
-    fn calculate_frame_overlap(&mut self, block_size: usize) -> u64 {
+    fn calculate_frame_overlap(&mut self, block_size: usize) -> (u64, bool) {
         // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
         let samples_per_frame: usize = self.samples_per_frame();
         let samples_per_bit: usize = self.samples_per_bit();
 
+        let mut frame_step = false;
+
         if self.subframe_sample > samples_per_frame as u64 {
             if self.state.running {
-                self.increment();
+                self.state.ltc.increment();
+                frame_step = true;
             }
 
             self.subframe_sample -= samples_per_frame as u64;
 
-            self.frame_buffer
+            self.sample_buffer
                 .copy_within(samples_per_frame..2 * samples_per_frame, 0);
 
             // write next frame into next frame buffer
             let next_frame_buf =
                 &self.generate_smpte_frame_buffer(samples_per_bit, 1)[..samples_per_frame];
-            self.frame_buffer[samples_per_frame..2 * samples_per_frame]
+            self.sample_buffer[samples_per_frame..2 * samples_per_frame]
                 .copy_from_slice(next_frame_buf);
         }
 
         let ret = self.subframe_sample;
         self.subframe_sample += block_size as u64;
-        ret
+        (ret, frame_step)
     }
 
-    fn audio_frame(&mut self, frame_size: usize) -> &[f32] {
-        let subframe_sample = self.calculate_frame_overlap(frame_size);
+    fn audio_frame(&mut self, frame_size: usize) -> (&[f32], bool) {
+        let (subframe_sample, frame_step) = self.calculate_frame_overlap(frame_size);
 
         self.last_cycle_frame = self.state.ltc;
 
@@ -320,7 +324,31 @@ impl TimecodeSource {
         //    self.advance_by_samples(frame_size, self.sample_rate);
         //}
 
-        &self.frame_buffer[subframe_sample as usize..subframe_sample as usize + frame_size]
+        (
+            &self.sample_buffer[subframe_sample as usize..subframe_sample as usize + frame_size],
+            frame_step,
+        )
+    }
+
+    fn tc_offset_from_seconds(&self, seconds_total: f64) -> TimecodeOffset {
+        let fps = self.frame_rate().as_float();
+        let hours = seconds_total / 3600.0;
+        let minutes = (seconds_total / 60.0) % 60.0;
+        let seconds = seconds_total % 60.0;
+        let frames = seconds_total.fract() * fps;
+        let timecode_offset = TimecodeOffset::from_raw_fields(
+            false,
+            hours as u8,
+            minutes as u8,
+            seconds as u8,
+            frames as u8,
+            self.frame_rate(),
+        )
+        .unwrap_or(TimecodeOffset {
+            abs_time: Timecode::default(),
+            is_negative: false,
+        });
+        timecode_offset
     }
 }
 
@@ -332,8 +360,10 @@ impl audio::source::AudioSource for TimecodeSource {
     fn command(&mut self, ctx: &AudioSourceContext, command: ControlAction) {
         match command {
             ControlAction::TransportZero => {
-                self.state.ltc.set_time(0, 0, 0, 0);
-                self.state.ltc.frame_progress = 0;
+                self.state.ltc.hours = 0;
+                self.state.ltc.minutes = 0;
+                self.state.ltc.seconds = 0;
+                self.state.ltc.frames = 0;
                 ctx.cbnet
                     .notify(Message::Small(SmallMessage::TimecodeData(self.state)));
             }
@@ -353,7 +383,9 @@ impl audio::source::AudioSource for TimecodeSource {
             ControlAction::TransportSeekBeat(beat_idx) => {
                 if !ctx.transport.running {
                     self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
-                    self.state.ltc.sub_us(ctx.beat.us_to_next_beat as u64)
+                    let seconds_total = ctx.beat.us_to_next_beat as f64 / 1000000.0;
+                    let timecode_offset = self.tc_offset_from_seconds(seconds_total);
+                    self.state.ltc = (self.state.ltc - timecode_offset).unwrap_or(self.state.ltc)
                 }
             }
             _ => {}
@@ -365,25 +397,31 @@ impl audio::source::AudioSource for TimecodeSource {
             return Ok(self.silence(ctx.frame_size));
         }
 
-        ctx.cbnet
-            .notify(Message::Small(SmallMessage::TimecodeData(self.state)));
-
         self.sample_rate = ctx.sample_rate;
 
-        Ok(self.audio_frame(ctx.frame_size))
+        let mut state_pre = self.state;
+        let (frame, stepped) = self.audio_frame(ctx.frame_size);
+
+        if stepped {
+            state_pre.ltc.increment();
+            ctx.cbnet
+                .notify(Message::Small(SmallMessage::TimecodeData(state_pre)));
+        }
+
+        Ok(frame)
     }
 
-    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: Event) {}
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
-        if let Some(EventDescription::TimecodeEvent { time, properties }) = event.event {
-            self.properties = properties;
-
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: Event) {
+        if let Some(EventDescription::TimecodeEvent { time }) = event.event {
             // FIXME: actually handle wall time
-            if !self.properties.use_wall_time {
-                self.state.ltc = time;
-                self.preload_frame_buffer();
-            }
+            //if !self.properties.use_wall_time {
+            //    self.state.ltc = time;
+            //    self.preload_frame_buffer();
+            //}
+
+            self.state.ltc = time;
 
             self.state.running = true;
         }
@@ -399,7 +437,6 @@ impl audio::source::AudioSource for TimecodeSource {
 #[cfg(test)]
 mod tests {
     use crate::audio::timecode::TimecodeSource;
-    use common::mem::smpte::TimecodeProperties;
     use std::f32;
 
     fn rise_fall_time(buf: &[f32]) -> (f32, f32, f32) {
@@ -451,7 +488,7 @@ mod tests {
 
         use super::*;
 
-        let mut tc = TimecodeSource::init(48000, TimecodeProperties::default());
+        let mut tc = TimecodeSource::init(48000);
         tc.state.running = true;
 
         const FRAME_SIZE: usize = 256;
@@ -489,7 +526,7 @@ mod tests {
 
     #[test]
     fn start() {
-        let mut tc = TimecodeSource::init(48000, TimecodeProperties::default());
+        let mut tc = TimecodeSource::init(48000);
         tc.state.running = true;
         assert_ne!(
             tc.audio_frame(256)
@@ -512,13 +549,7 @@ mod tests {
         const SAMPLES_PER_FRAME: usize = SAMPLE_RATE / SMPTE_FRAME_RATE;
         const SAMPLES_PER_BIT: usize = SAMPLES_PER_FRAME / 80;
 
-        let mut tc = TimecodeSource::init(
-            SAMPLE_RATE,
-            TimecodeProperties {
-                user_bit_format: TimecodeUserBitFormat::DateTimezone,
-                ..Default::default()
-            },
-        );
+        let mut tc = TimecodeSource::init(SAMPLE_RATE);
 
         let mut frame = vec![];
         for _ in 0..NUM_BLOCKS {
@@ -548,9 +579,7 @@ mod tests {
 
         const EQUAL_THRESHOLD: u16 = 2;
         for (i, (a, b)) in csamples.iter().zip(rsamples.iter()).enumerate() {
-            if i % SAMPLES_PER_FRAME / SAMPLES_PER_BIT == 27
-                || i % SAMPLES_PER_FRAME / SAMPLES_PER_BIT == 59
-            {
+            if [27, 59, 43usize].contains(&(i % SAMPLES_PER_FRAME / SAMPLES_PER_BIT)) {
                 continue;
             }
             if a.abs().abs_diff(b.abs()) >= EQUAL_THRESHOLD {
@@ -611,7 +640,7 @@ mod tests {
         let mut all_zeroes = true;
 
         let mut writer = hound::WavWriter::create("target/debug/ltc.wav", spec).unwrap();
-        let mut tc = TimecodeSource::init(48000, TimecodeProperties::default());
+        let mut tc = TimecodeSource::init(48000);
         tc.state.running = true;
         for _ in (0..SAMPLE_RATE * NUM_SECS).step_by(FRAME_SIZE) {
             for sample in tc.audio_frame(FRAME_SIZE) {
@@ -629,26 +658,13 @@ mod tests {
     }
 
     #[test]
-    fn advance() {
-        use super::*;
-
-        let mut tc = TimecodeSource::init(48000, TimecodeProperties::default());
-        assert_eq!(tc.state.ltc, TimecodeInstant::new(25));
-        tc.advance_by_samples(48000 / 50, 48000);
-        tc.advance_by_samples(48000 / 50, 48000);
-
-        assert_eq!(tc.state.ltc.s, 0);
-        assert_eq!(tc.state.ltc.f, 1);
-    }
-
-    #[test]
     fn wraparound() {
-        let mut time = TimecodeSource::init(48000, TimecodeProperties::default());
+        let mut time = TimecodeSource::init(48000);
         for i in 0..20000 {
             time.state.running = true;
             time.audio_frame(256);
             println!("{}", time.state.ltc);
-            assert_ne!(time.state.ltc.f, 25);
+            assert_ne!(time.state.ltc.frames, 25);
         }
     }
 }

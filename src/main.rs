@@ -18,15 +18,15 @@ use crate::{
     },
     logger::LogDispatcher,
 };
-use common::{
+use ks_common_clicks::{
     cue::{Cue, Show, ShowBuilder},
     local::config::{LogContext, LogItem, LogKind, SystemConfiguration},
-    mem::str::StaticString,
     protocol::{
         message::{Heartbeat, LargeMessage, Message, SmallMessage},
         request::{ControlAction, Request},
     },
 };
+use ks_common_generic::str::StaticString;
 use std::time::{Duration, Instant};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -228,7 +228,7 @@ fn main() {
 
         if last_heartbeat_time.elapsed().gt(&Duration::from_secs(1)) {
             let heartbeat = Message::Small(SmallMessage::Heartbeat(Heartbeat {
-                common_version: StaticString::new(common::VERSION),
+                common_version: StaticString::new(ks_common_generic::VERSION),
                 system_version: StaticString::new(VERSION),
                 system_time: chrono::Utc::now().timestamp() as u64,
                 cpu_use_audio: ah.get_cpu_use(),

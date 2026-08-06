@@ -3,9 +3,9 @@ use crate::{
     cbnet::CrossbeamNetwork,
 };
 use arc_swap::ArcSwap;
-use common::{
+use ks_common_clicks::{
     cue::{Cue, Show},
-    event::{EventCursor, EventDescription},
+    event::{Event, EventCursor, EventDescription},
     local::{
         config::{LogContext, LogItem, LogKind},
         status::{AudioSourceState, PlaybackHandlerStatus, PlaybackState},
@@ -266,7 +266,7 @@ impl PlaybackHandler {
 
 #[cfg(test)]
 mod tests {
-    use common::event::Event;
+    use ks_common_clicks::event::Event;
 
     use super::*;
     #[test]
@@ -455,7 +455,7 @@ impl AudioSource for PlaybackDevice {
         AudioSourceState::PlaybackStatus(self.make_status())
     }
 
-    fn event_occured(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {
+    fn event_occured(&mut self, ctx: &AudioSourceContext, event: Event) {
         match event.event {
             Some(EventDescription::PlaybackEvent {
                 channel_idx,
@@ -493,5 +493,5 @@ impl AudioSource for PlaybackDevice {
         }
     }
 
-    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: common::event::Event) {}
+    fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: Event) {}
 }

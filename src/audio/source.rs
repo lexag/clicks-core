@@ -1,8 +1,8 @@
-use common::cue::Cue;
-use common::event::Event;
-use common::local::status::{AudioSourceState, BeatState, TransportState};
-use common::protocol::request::ControlAction;
 use jack::Error;
+use ks_common_clicks::cue::Cue;
+use ks_common_clicks::event::Event;
+use ks_common_clicks::local::status::{AudioSourceState, BeatState, TransportState};
+use ks_common_clicks::protocol::request::ControlAction;
 
 use std::fmt::Debug;
 use std::ops::Div;

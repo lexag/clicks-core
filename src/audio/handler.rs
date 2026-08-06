@@ -4,16 +4,16 @@ use crate::{
         notification::JACKNotificationHandler, processor::AudioProcessor, source::SourceConfig,
     },
 };
-use common::{
+use jack::{AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags, Unowned};
+use ks_common_clicks::{
     cue::Show,
     local::{
         config::{AudioConfiguration, LogContext, LogItem, LogKind},
         status::{AudioDevice, JACKStatus},
     },
-    mem::str::StaticString,
     protocol::message::{LargeMessage, Message},
 };
-use jack::{AsyncClient, AudioOut, Client, ClientOptions, Port, PortFlags, Unowned};
+use ks_common_generic::str::StaticString;
 
 pub struct AudioHandler {
     pub client: Option<AsyncClient<JACKNotificationHandler, AudioProcessor>>,

@@ -1,8 +1,9 @@
 use crate::{cbnet::CrossbeamNetwork, hardware};
-use common::{
+use ks_common_clicks::{
     local::config::{LogContext, LogItem, LogKind},
-    mem::time::format_hms,
+    protocol::message::{LargeMessage, Message},
 };
+use ks_common_generic::time::format_hms;
 use std::{io::Write, path::PathBuf, str::FromStr};
 
 #[derive(Default)]
@@ -54,9 +55,8 @@ impl LogDispatcher {
         }
 
         // Write to network
-        self.cbnet.notify(common::protocol::message::Message::Large(
-            common::protocol::message::LargeMessage::Log(item.clone()),
-        ));
+        self.cbnet
+            .notify(Message::Large(LargeMessage::Log(item.clone())));
 
         // Write (errors and warnings) to display
         if item.kind.intersects(LogKind::Error | LogKind::Warning) {
