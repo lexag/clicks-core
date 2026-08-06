@@ -655,8 +655,8 @@ dependencies = [
 
 [[package]]
 name = "ks-common-clicks"
-version = "2.3.0"
-source = "git+https://github.com/lexag/ks-common.git?tag=v2.3.0#fc89a662751c4010084615f6c136cfa0157213e4"
+version = "2.4.0"
+source = "git+https://github.com/lexag/ks-common.git?tag=v2.4.0#e38849998a714bbb2b24face35958d802b9f5d9d"
 dependencies = [
  "bitflags 2.13.1",
  "chrono",
@@ -669,8 +669,8 @@ dependencies = [
 
 [[package]]
 name = "ks-common-generic"
-version = "2.3.0"
-source = "git+https://github.com/lexag/ks-common.git?tag=v2.3.0#fc89a662751c4010084615f6c136cfa0157213e4"
+version = "2.4.0"
+source = "git+https://github.com/lexag/ks-common.git?tag=v2.4.0#e38849998a714bbb2b24face35958d802b9f5d9d"
 dependencies = [
  "bitflags 2.13.1",
  "postcard",
