@@ -1,4 +1,7 @@
-use crate::audio::{self, source::AudioSourceContext};
+use crate::{
+    audio::{self, source::AudioSourceContext},
+    cbnet::CrossbeamNetwork,
+};
 
 use ks_common_clicks::{
     event::{Event, EventCursor, EventDescription},
@@ -281,14 +284,17 @@ impl TimecodeSource {
         time
     }
 
-    fn calculate_frame_overlap(&mut self, block_size: usize) -> u64 {
+    fn calculate_frame_overlap(&mut self, block_size: usize) -> (u64, bool) {
         // FIXME: will run slow(?) on some framerates where samples_per_bit gets truncated
         let samples_per_frame: usize = self.samples_per_frame();
         let samples_per_bit: usize = self.samples_per_bit();
 
+        let mut frame_step = false;
+
         if self.subframe_sample > samples_per_frame as u64 {
             if self.state.running {
                 self.state.ltc.increment();
+                frame_step = true;
             }
 
             self.subframe_sample -= samples_per_frame as u64;
@@ -305,11 +311,11 @@ impl TimecodeSource {
 
         let ret = self.subframe_sample;
         self.subframe_sample += block_size as u64;
-        ret
+        (ret, frame_step)
     }
 
-    fn audio_frame(&mut self, frame_size: usize) -> &[f32] {
-        let subframe_sample = self.calculate_frame_overlap(frame_size);
+    fn audio_frame(&mut self, frame_size: usize) -> (&[f32], bool) {
+        let (subframe_sample, frame_step) = self.calculate_frame_overlap(frame_size);
 
         self.last_cycle_frame = self.state.ltc;
 
@@ -318,7 +324,10 @@ impl TimecodeSource {
         //    self.advance_by_samples(frame_size, self.sample_rate);
         //}
 
-        &self.sample_buffer[subframe_sample as usize..subframe_sample as usize + frame_size]
+        (
+            &self.sample_buffer[subframe_sample as usize..subframe_sample as usize + frame_size],
+            frame_step,
+        )
     }
 
     fn tc_offset_from_seconds(&self, seconds_total: f64) -> TimecodeOffset {
@@ -388,12 +397,18 @@ impl audio::source::AudioSource for TimecodeSource {
             return Ok(self.silence(ctx.frame_size));
         }
 
-        ctx.cbnet
-            .notify(Message::Small(SmallMessage::TimecodeData(self.state)));
-
         self.sample_rate = ctx.sample_rate;
 
-        Ok(self.audio_frame(ctx.frame_size))
+        let mut state_pre = self.state;
+        let (frame, stepped) = self.audio_frame(ctx.frame_size);
+
+        if stepped {
+            state_pre.ltc.increment();
+            ctx.cbnet
+                .notify(Message::Small(SmallMessage::TimecodeData(state_pre)));
+        }
+
+        Ok(frame)
     }
 
     fn event_will_occur(&mut self, ctx: &AudioSourceContext, event: Event) {}
