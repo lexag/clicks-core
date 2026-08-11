@@ -261,7 +261,7 @@ impl TimecodeSource {
     }
 
     fn calculate_time_at_beat(&self, ctx: &AudioSourceContext, beat_idx: u16) -> Timecode {
-        let mut time = Timecode::from_frames(0, self.frame_rate()).expect("tc 00:00");
+        let mut time = Timecode::from_frames(0, self.frame_rate());
         let mut cursor = EventCursor::new(&ctx.cue.events);
         for i in 0..beat_idx {
             while cursor.at_or_before(beat_idx)
@@ -273,13 +273,10 @@ impl TimecodeSource {
                     time = new_time;
                 }
             }
-            time = (time
+            time = time
                 + self.tc_offset_from_seconds(
                     ctx.cue.get_beat(i).unwrap_or_default().length as f64 / 1000000.0,
-                ))
-            .expect(
-                "this addition should really be unfailable and wrap but that is a ks-common fix",
-            );
+                );
         }
         time
     }
@@ -343,11 +340,7 @@ impl TimecodeSource {
             seconds as u8,
             frames as u8,
             self.frame_rate(),
-        )
-        .unwrap_or(TimecodeOffset {
-            abs_time: Timecode::default(),
-            is_negative: false,
-        });
+        );
         timecode_offset
     }
 }
@@ -385,7 +378,7 @@ impl audio::source::AudioSource for TimecodeSource {
                     self.state.ltc = self.calculate_time_at_beat(ctx, beat_idx);
                     let seconds_total = ctx.beat.us_to_next_beat as f64 / 1000000.0;
                     let timecode_offset = self.tc_offset_from_seconds(seconds_total);
-                    self.state.ltc = (self.state.ltc - timecode_offset).unwrap_or(self.state.ltc)
+                    self.state.ltc = self.state.ltc - timecode_offset;
                 }
             }
             _ => {}
