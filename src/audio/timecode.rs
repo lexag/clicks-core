@@ -496,7 +496,7 @@ mod tests {
         let mut frame = [0_f32; FRAME_SIZE * NUM_FRAMES];
         for i in 0..NUM_FRAMES {
             let _ = &frame[i * FRAME_SIZE..(i + 1) * FRAME_SIZE]
-                .copy_from_slice(tc.audio_frame(FRAME_SIZE));
+                .copy_from_slice(tc.audio_frame(FRAME_SIZE).0);
         }
 
         // println!("{:?}", frame);
@@ -530,6 +530,7 @@ mod tests {
         tc.state.running = true;
         assert_ne!(
             tc.audio_frame(256)
+                .0
                 .to_owned()
                 .into_iter()
                 .map(|v| v.abs())
@@ -553,7 +554,7 @@ mod tests {
 
         let mut frame = vec![];
         for _ in 0..NUM_BLOCKS {
-            frame.extend_from_slice(tc.audio_frame(BLOCK_SIZE));
+            frame.extend_from_slice(tc.audio_frame(BLOCK_SIZE).0);
         }
 
         //for (i, s) in frame.iter().enumerate().take(2060) {
@@ -643,7 +644,7 @@ mod tests {
         let mut tc = TimecodeSource::init(48000);
         tc.state.running = true;
         for _ in (0..SAMPLE_RATE * NUM_SECS).step_by(FRAME_SIZE) {
-            for sample in tc.audio_frame(FRAME_SIZE) {
+            for sample in tc.audio_frame(FRAME_SIZE).0 {
                 if sample.abs() > 0.001 {
                     all_zeroes = false;
                 }
